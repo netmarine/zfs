@@ -572,6 +572,11 @@ typedef enum zfs_key_location {
 #define	ZPL_VERSION_USERSPACE		ZPL_VERSION_4
 #define	ZPL_VERSION_SA			ZPL_VERSION_5
 
+/* Persistent L2ARC version */
+#define	L2ARC_PERSISTENT_VERSION_1	1ULL
+#define	L2ARC_PERSISTENT_VERSION	L2ARC_PERSISTENT_VERSION_1
+#define	L2ARC_PERSISTENT_VERSION_STRING	"1"
+
 /* Rewind policy information */
 #define	ZPOOL_NO_REWIND		1  /* No policy - default behavior */
 #define	ZPOOL_NEVER_REWIND	2  /* Do not search for best txg or rewind */
@@ -686,6 +691,7 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_CONFIG_PHYS_PATH		"phys_path"
 #define	ZPOOL_CONFIG_IS_LOG		"is_log"
 #define	ZPOOL_CONFIG_L2CACHE		"l2cache"
+#define	ZPOOL_CONFIG_L2CACHE_PERSISTENT	"l2cache_persistent"
 #define	ZPOOL_CONFIG_HOLE_ARRAY		"hole_array"
 #define	ZPOOL_CONFIG_VDEV_CHILDREN	"vdev_children"
 #define	ZPOOL_CONFIG_IS_HOLE		"is_hole"

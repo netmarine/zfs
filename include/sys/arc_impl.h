@@ -174,6 +174,178 @@ typedef struct l1arc_buf_hdr {
 	abd_t			*b_pabd;
 } l1arc_buf_hdr_t;
 
+typedef enum l2arc_dev_hdr_flags_t {
+	L2ARC_DEV_HDR_EVICT_FIRST = (1 << 0)	/* mirror of l2ad_first */
+} l2arc_dev_hdr_flags_t;
+
+/*
+ * Pointer used in persistent L2ARC (for pointing to log blocks & ARC buffers).
+ */
+typedef struct l2arc_log_blkptr {
+	/*
+	 * Offset of log block within the device, in bytes
+	 */
+	uint64_t	lbp_daddr;
+	/*
+	 * lbp_prop has the following format:
+	 *	* logical size (in sectors)
+	 *	* physical (compressed) size (in sectors)
+	 *	* compression algorithm (we always LZ4-compress l2arc logs)
+	 *	* checksum algorithm (used for lbp_cksum)
+	 */
+	uint64_t	lbp_prop;
+	zio_cksum_t	lbp_cksum;	/* checksum of log */
+} l2arc_log_blkptr_t;
+
+/*
+ * The persistent L2ARC device header.
+ * Byte order of magic determines whether 64-bit bswap of fields is necessary.
+ */
+typedef struct l2arc_dev_hdr_phys {
+	uint64_t	dh_magic;	/* L2ARC_DEV_HDR_MAGIC */
+	uint64_t	dh_version;	/* Persistent L2ARC version */
+	zio_cksum_t	dh_self_cksum;	/* fletcher4 of fields below */
+
+	/*
+	 * Global L2ARC device state and metadata.
+	 */
+	uint64_t	dh_spa_guid;
+	uint64_t	dh_alloc_space;		/* vdev allocated bytes */
+	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
+
+	/*
+	 * Start of log block chain. [0] -> newest log, [1] -> one older (used
+	 * for initiating prefetch).
+	 */
+	l2arc_log_blkptr_t	dh_start_lbps[2];
+	uint16_t		dh_log_blk_ent;	/* entries per log blk */
+
+	const uint16_t		dh_pad[171];		/* pad to 512 bytes */
+} l2arc_dev_hdr_phys_t;
+CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
+
+/*
+ * A single ARC buffer header entry in a l2arc_log_blk_phys_t.
+ */
+typedef struct l2arc_log_ent_phys {
+	dva_t			le_dva;		/* dva of buffer */
+	uint64_t		le_birth;	/* birth txg of buffer */
+	/*
+	 * le_prop has the following format:
+	 *	* logical size (in sectors)
+	 *	* physical (compressed) size (in sectors)
+	 *	* compression algorithm
+	 *	* checksum algorithm (used for le_cksum)
+	 *	* object type (used to restore arc_buf_contents_t)
+	 *	* protected status (used for encryption)
+	 *	* prefetch status (used in l2arc_read_done())
+	 */
+	uint64_t		le_prop;
+	uint64_t		le_daddr;	/* buf location on l2dev */
+	zio_cksum_t		le_cksum;	/* checksum of log entry */
+	const uint32_t		le_pad[14];	/* pad to 128 bytes	 */
+} l2arc_log_ent_phys_t;
+
+#define	L2ARC_LOG_BLK_MAX_SIZE			(128 * 1024)	/* 128k */
+#define	L2ARC_LOG_BLK_HEADER_LEN		(128)
+#define	L2ARC_LOG_BLK_MAX_ENTRIES		/* 1023 entries */	\
+	((L2ARC_LOG_BLK_MAX_SIZE - L2ARC_LOG_BLK_HEADER_LEN) /		\
+	sizeof (l2arc_log_ent_phys_t))
+
+/*
+ * A log block of up to 1023 ARC buffer log entries, chained into the
+ * persistent L2ARC metadata linked list. Byte order of magic determines
+ * whether 64-bit bswap of fields is necessary.
+ */
+typedef struct l2arc_log_blk_phys {
+	/* Header - see L2ARC_LOG_BLK_HEADER_LEN above */
+	uint64_t		lb_magic;	/* L2ARC_LOG_BLK_MAGIC */
+	/*
+	 * There are 2 chains (headed by dh_start_lbps[2]), and this field
+	 * points back to the previous block in this chain. We alternate
+	 * which chain we append to, so they are time-wise and offset-wise
+	 * interleaved, but that is an optimization rather than for
+	 * correctness.
+	 */
+	l2arc_log_blkptr_t	lb_prev_lbp;	/* pointer to prev log block */
+	uint64_t		lb_pad[9];	/* resv'd for future use */
+	/* Payload */
+	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
+} l2arc_log_blk_phys_t;
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_MAX_SIZE);
+CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
+    offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
+
+/*
+ * These structures hold in-flight abd buffers for log blocks as they're being
+ * written to the L2ARC device.
+ */
+typedef struct l2arc_log_blk_abd {
+	abd_t		*abd;
+	list_node_t	node;
+} l2arc_log_blk_abd_t;
+
+/* Macros for setting fields in le_prop and lbp_prop */
+#define	BLKPROP_GET_LSIZE(field)	\
+	BF64_GET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1)
+#define	BLKPROP_SET_LSIZE(field, x)	\
+	BF64_SET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1, x)
+#define	BLKPROP_GET_PSIZE(field)	\
+	BF64_GET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1)
+#define	BLKPROP_SET_PSIZE(field, x)	\
+	BF64_SET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1, x)
+#define	BLKPROP_GET_COMPRESS(field)	BF64_GET((field), 32, 7)
+#define	BLKPROP_SET_COMPRESS(field, x)	BF64_SET((field), 32, 7, x)
+#define	BLKPROP_GET_CHECKSUM(field)	BF64_GET((field), 40, 8)
+#define	BLKPROP_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
+#define	BLKPROP_GET_TYPE(field)		BF64_GET((field), 48, 8)
+#define	BLKPROP_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
+#define	BLKPROP_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
+#define	BLKPROP_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
+#define	BLKPROP_GET_PREFETCH(field)	BF64_GET((field), 57, 1)
+#define	BLKPROP_SET_PREFETCH(field, x)	BF64_SET((field), 57, 1, x)
+
+#define	PTR_SWAP(x, y)		\
+	do {			\
+		void *tmp = (x);\
+		x = y;		\
+		y = tmp;	\
+		_NOTE(CONSTCOND)\
+	} while (0)
+
+#define	L2ARC_DEV_HDR_MAGIC	0x5a46534341434845LLU	/* ASCII: "ZFSCACHE" */
+#define	L2ARC_LOG_BLK_MAGIC	0x4c4f47424c4b4844LLU	/* ASCII: "LOGBLKHD" */
+
+/*
+ * L2ARC Internals
+ */
+typedef struct l2arc_dev {
+	vdev_t			*l2ad_vdev;	/* vdev */
+	spa_t			*l2ad_spa;	/* spa */
+	uint64_t		l2ad_hand;	/* next write location */
+	uint64_t		l2ad_start;	/* first addr on device */
+	uint64_t		l2ad_end;	/* last addr on device */
+	boolean_t		l2ad_first;	/* first sweep through */
+	boolean_t		l2ad_writing;	/* currently writing */
+	kmutex_t		l2ad_mtx;	/* lock for buffer list */
+	list_t			l2ad_buflist;	/* buffer list */
+	list_node_t		l2ad_node;	/* device list node */
+	zfs_refcount_t		l2ad_alloc;	/* allocated bytes */
+	/*
+	 * Persistence-related stuff
+	 */
+	l2arc_dev_hdr_phys_t	*l2ad_dev_hdr;	/* persistent device header */
+	uint64_t		l2ad_dev_hdr_asize; /* aligned hdr size */
+	l2arc_log_blk_phys_t	l2ad_log_blk;	/* currently open log block */
+	int			l2ad_log_ent_idx; /* index into cur log blk */
+	/* number of bytes in current log block's payload */
+	uint64_t		l2ad_log_blk_payload_asize;
+	/* flag indicating whether a rebuild is scheduled or is going on */
+	boolean_t		l2ad_rebuild;
+	boolean_t		l2ad_rebuild_cancel;
+	boolean_t		l2ad_rebuild_began;
+} l2arc_dev_t;
+
 /*
  * Encrypted blocks will need to be stored encrypted on the L2ARC
  * disk as they appear in the main pool. In order for this to work we
@@ -204,20 +376,6 @@ typedef struct arc_buf_hdr_crypt {
 	uint8_t			b_mac[ZIO_DATA_MAC_LEN];
 } arc_buf_hdr_crypt_t;
 
-typedef struct l2arc_dev {
-	vdev_t			*l2ad_vdev;	/* vdev */
-	spa_t			*l2ad_spa;	/* spa */
-	uint64_t		l2ad_hand;	/* next write location */
-	uint64_t		l2ad_start;	/* first addr on device */
-	uint64_t		l2ad_end;	/* last addr on device */
-	boolean_t		l2ad_first;	/* first sweep through */
-	boolean_t		l2ad_writing;	/* currently writing */
-	kmutex_t		l2ad_mtx;	/* lock for buffer list */
-	list_t			l2ad_buflist;	/* buffer list */
-	list_node_t		l2ad_node;	/* device list node */
-	zfs_refcount_t		l2ad_alloc;	/* allocated bytes */
-} l2arc_dev_t;
-
 typedef struct l2arc_buf_hdr {
 	/* protected by arc_buf_hdr mutex */
 	l2arc_dev_t		*b_dev;		/* L2ARC device */
@@ -230,6 +388,9 @@ typedef struct l2arc_buf_hdr {
 typedef struct l2arc_write_callback {
 	l2arc_dev_t	*l2wcb_dev;		/* device info */
 	arc_buf_hdr_t	*l2wcb_head;		/* head of write buflist */
+	abd_t		*l2wcb_abd;		/* abd for L2ARC dev header */
+	/* in-flight list of log blocks */
+	list_t		l2wcb_abd_list;
 } l2arc_write_callback_t;
 
 struct arc_buf_hdr {
@@ -530,6 +691,76 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_psize;
 	/* Not updated directly; only synced in arc_kstat_update. */
 	kstat_named_t arcstat_l2_hdr_size;
+	/*
+	 * Number of L2ARC log blocks written. These are used for restoring the
+	 * L2ARC.
+	 * Updated during writing of L2ARC log blocks.
+	 */
+	kstat_named_t arcstat_l2_log_blk_writes;
+	/*
+	 * Moving average of the size of the L2ARC log blocks, in bytes.
+	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
+	 */
+	kstat_named_t arcstat_l2_log_blk_avg_size;
+	/*
+	 * Moving average of the physical size of L2ARC restored data, in bytes
+	 * to the physical size of their metadata in ARC, in bytes.
+	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
+	 */
+	kstat_named_t arcstat_l2_data_to_meta_ratio;
+	/*
+	 * Number of times the L2ARC rebuild was successful for an L2ARC device.
+	 */
+	kstat_named_t arcstat_l2_rebuild_success;
+	/*
+	 * Number of times the L2ARC rebuild failed because the device header
+	 * was in an unsupported format.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_unsupported;
+	/*
+	 * Number of times the L2ARC rebuild failed because of IO errors
+	 * while reading the device header.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
+	/*
+	 * Number of times the L2ARC rebuild failed because the log block
+	 * pointers in the device header (dh_start_lbps) were corrupted.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_dh_errors;
+	/*
+	 * Number of L2ARC log blocks which had none of their log entries
+	 * (buffers) restored in ARC due to checksum errors.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_lb_errors;
+	/*
+	 * Number of L2ARc log entries (buffers) which failed to be restored
+	 * in ARC due to checksum errors.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_le_errors;
+	/*
+	 * Number of times the L2ARC rebuild was aborted due to low system
+	 * memory.
+	 */
+	kstat_named_t arcstat_l2_rebuild_abort_lowmem;
+	/* Logical size of L2ARC restored data, in bytes. */
+	kstat_named_t arcstat_l2_rebuild_size;
+	/*
+	 * Number of L2ARC log entries (buffers) that were successfully
+	 * restored in ARC.
+	 */
+	kstat_named_t arcstat_l2_rebuild_bufs;
+	/*
+	 * Number of L2ARc log entries (buffers) already cached in ARC. These
+	 * were not restored again.
+	 */
+	kstat_named_t arcstat_l2_rebuild_bufs_precached;
+	/* Physical size of L2ARC restored data, in bytes. */
+	kstat_named_t arcstat_l2_rebuild_psize;
+	/*
+	 * Number of L2ARC log blocks that were restored successfully. Each
+	 * log block may hold up to L2ARC_LOG_BLK_MAX_ENTRIES buffers.
+	 */
+	kstat_named_t arcstat_l2_rebuild_log_blks;
 	kstat_named_t arcstat_memory_throttle_count;
 	kstat_named_t arcstat_memory_direct_count;
 	kstat_named_t arcstat_memory_indirect_count;
