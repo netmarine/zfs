@@ -528,6 +528,20 @@ arc_stats_t arc_stats = {
 	{ "l2_size",			KSTAT_DATA_UINT64 },
 	{ "l2_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_hdr_size",		KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_writes",		KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_avg_size",	KSTAT_DATA_UINT64 },
+	{ "l2_data_to_meta_ratio",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_successes",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_cksum_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_loop_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_lowmem",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_size",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_bufs",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_bufs_precached",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_psize",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_log_blks",	KSTAT_DATA_UINT64 },
 	{ "memory_throttle_count",	KSTAT_DATA_UINT64 },
 	{ "memory_direct_count",	KSTAT_DATA_UINT64 },
 	{ "memory_indirect_count",	KSTAT_DATA_UINT64 },
@@ -581,6 +595,24 @@ arc_stats_t arc_stats = {
 			ARCSTAT_BUMP(arcstat_##notstat1##_##notstat2##_##stat);\
 		}							\
 	}
+
+/*
+ * This macro allows us to use kstats as floating averages. Each time we
+ * update this kstat, we first factor it and the update value by
+ * ARCSTAT_AVG_FACTOR to shrink the new value's contribution to the overall
+ * average. This macro assumes that integer loads and stores are atomic, but
+ * is not safe for multiple writers updating the kstat in parallel (only the
+ * last writer's update will remain).
+ */
+#define	ARCSTAT_F_AVG_FACTOR	3
+#define	ARCSTAT_F_AVG(stat, value) \
+	do { \
+		uint64_t x = ARCSTAT(stat); \
+		x = x - x / ARCSTAT_F_AVG_FACTOR + \
+		    (value) / ARCSTAT_F_AVG_FACTOR; \
+		ARCSTAT(stat) = x; \
+		_NOTE(CONSTCOND) \
+	} while (0)
 
 kstat_t			*arc_ksp;
 static arc_state_t	*arc_anon;
@@ -689,6 +721,11 @@ taskq_t *arc_prune_taskq;
 #define	ARC_BUF_SHARED(buf)	((buf)->b_flags & ARC_BUF_FLAG_SHARED)
 #define	ARC_BUF_COMPRESSED(buf)	((buf)->b_flags & ARC_BUF_FLAG_COMPRESSED)
 #define	ARC_BUF_ENCRYPTED(buf)	((buf)->b_flags & ARC_BUF_FLAG_ENCRYPTED)
+
+CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
+CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
+    offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
 
 /*
  * Other sizes
@@ -805,6 +842,9 @@ static kmutex_t l2arc_feed_thr_lock;
 static kcondvar_t l2arc_feed_thr_cv;
 static uint8_t l2arc_thread_exit;
 
+static kmutex_t l2arc_rebuild_thr_lock;
+static kcondvar_t l2arc_rebuild_thr_cv;
+
 static abd_t *arc_get_data_abd(arc_buf_hdr_t *, uint64_t, void *);
 static void *arc_get_data_buf(arc_buf_hdr_t *, uint64_t, void *);
 static void arc_get_data_impl(arc_buf_hdr_t *, uint64_t, void *);
@@ -816,6 +856,7 @@ static void arc_hdr_alloc_abd(arc_buf_hdr_t *, boolean_t);
 static void arc_access(arc_buf_hdr_t *, kmutex_t *);
 static boolean_t arc_is_overflowing(void);
 static void arc_buf_watch(arc_buf_t *);
+static l2arc_dev_t *l2arc_vdev_get(vdev_t *vd);
 
 static arc_buf_contents_t arc_buf_type(arc_buf_hdr_t *);
 static uint32_t arc_bufc_to_flags(arc_buf_contents_t);
@@ -825,6 +866,58 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 
+/*
+ * Performance tuning of L2ARC persistence:
+ *
+ * l2arc_rebuild_enabled : Controls whether L2ARC device adds (either at
+ *		pool import or when adding one manually later) will attempt
+ *		to rebuild L2ARC buffer contents. In special circumstances,
+ *		the administrator may want to set this to B_FALSE, if they
+ *		are having trouble importing a pool or attaching an L2ARC
+ *		device (e.g. the L2ARC device is slow to read in stored log
+ *		metadata, or the metadata has become somehow
+ *		fragmented/unusable).
+ */
+boolean_t l2arc_rebuild_enabled = B_TRUE;
+
+/* L2ARC persistence rebuild control routines. */
+static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
+static int l2arc_rebuild(l2arc_dev_t *dev);
+
+/* L2ARC persistence read I/O routines. */
+static int l2arc_dev_hdr_read(l2arc_dev_t *dev);
+static int l2arc_log_blk_read(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *this_lp, const l2arc_log_blkptr_t *next_lp,
+    l2arc_log_blk_phys_t *this_lb, l2arc_log_blk_phys_t *next_lb,
+    uint8_t *this_lb_buf, uint8_t *next_lb_buf,
+    zio_t *this_io, zio_t **next_io);
+static zio_t *l2arc_log_blk_prefetch(vdev_t *vd,
+    const l2arc_log_blkptr_t *lp, uint8_t *lb_buf);
+static void l2arc_log_blk_prefetch_abort(zio_t *zio);
+
+/* L2ARC persistence block restoration routines. */
+static void l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
+    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize);
+static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
+    l2arc_dev_t *dev, uint64_t guid);
+
+/* L2ARC persistence write I/O routines. */
+static void l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
+    l2arc_write_callback_t *cb);
+static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
+    l2arc_write_callback_t *cb);
+
+/* L2ARC persistence auxilliary routines. */
+static boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lp);
+static void l2arc_dev_hdr_checksum(const l2arc_dev_hdr_phys_t *hdr,
+    zio_cksum_t *cksum);
+static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
+    const arc_buf_hdr_t *ab);
+static inline boolean_t l2arc_range_check_overlap(uint64_t bottom,
+    uint64_t top, uint64_t check);
+static void l2arc_blk_prefetch_done(zio_t *zio);
+static void l2arc_blk_commit_done(zio_t *zio);
 
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
@@ -1581,6 +1674,40 @@ arc_buf_try_copy_decompressed_data(arc_buf_t *buf)
 		EQUIV(!copied, hdr->b_l1hdr.b_freeze_cksum == NULL);
 
 	return (copied);
+}
+
+/*
+ * Allocates an ARC buf header that's in an evicted & L2-cached state.
+ * This is used during l2arc reconstruction to make empty ARC buffers
+ * which circumvent the regular disk->arc->l2arc path and instead come
+ * into being in the reverse order, i.e. l2arc->arc.
+ */
+arc_buf_hdr_t *
+arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
+    l2arc_dev_t *dev, dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
+    enum zio_compress compress, boolean_t protected)
+{
+	arc_buf_hdr_t *hdr;
+
+	ASSERT(size != 0);
+	hdr = kmem_cache_alloc(hdr_l2only_cache, KM_SLEEP);
+	hdr->b_birth = birth;
+	hdr->b_type = type;
+	hdr->b_flags = 0;
+	arc_hdr_set_flags(hdr, arc_bufc_to_flags(type) | ARC_FLAG_HAS_L2HDR);
+	HDR_SET_LSIZE(hdr, size);
+	HDR_SET_PSIZE(hdr, psize);
+	arc_hdr_set_compress(hdr, compress);
+	if (protected)
+		arc_hdr_set_flags(hdr, ARC_FLAG_PROTECTED);
+	hdr->b_spa = load_guid;
+
+	hdr->b_dva = dva;	/* needs to go after arc_hdr_set_* calls */
+
+	hdr->b_l2hdr.b_dev = dev;
+	hdr->b_l2hdr.b_daddr = daddr;
+
+	return (hdr);
 }
 
 /*
@@ -7447,6 +7574,95 @@ arc_fini(void)
  *
  * These three functions determine what to write, how much, and how quickly
  * to send writes.
+ *
+ * L2ARC persistence:
+ *
+ * When writing buffers to L2ARC, we periodically add some metadata to
+ * make sure we can pick them up after reboot, thus dramatically reducing
+ * the impact that any downtime has on the performance of storage systems
+ * with large caches.
+ *
+ * The implementation works fairly simply by integrating the following two
+ * modifications:
+ *
+ * *) Every now and then we mix in a piece of metadata (called a log block)
+ *    into the L2ARC write. This allows us to understand what's been written,
+ *    so that we can rebuild the arc_buf_hdr_t structures of the main ARC
+ *    buffers. The log block also includes a "2-back-reference" pointer to
+ *    he second-to-previous block, forming a back-linked list of blocks on
+ *    the L2ARC device.
+ *
+ * *) We reserve SPA_MINBLOCKSIZE of space at the start of each L2ARC device
+ *    for our header bookkeeping purposes. This contains a device header,
+ *    which contains our top-level reference structures. We update it each
+ *    time we write a new log block, so that we're able to locate it in the
+ *    L2ARC device. If this write results in an inconsistent device header
+ *    (e.g. due to power failure), we detect this by verifying the header's
+ *    checksum and simply drop the entries from L2ARC.
+ *
+ * Implementation diagram:
+ *
+ * +=== L2ARC device (not to scale) ======================================+
+ * |       ___two newest log block pointers__.__________                  |
+ * |      /                                   \1 back   \latest           |
+ * |.____/_.                                   V         V                |
+ * ||L2 dev|....|lb |bufs |lb |bufs |lb |bufs |lb |bufs |lb |---(empty)---|
+ * ||   hdr|      ^         /^       /^        /         /                |
+ * |+------+  ...--\-------/  \-----/--\------/         /                 |
+ * |                \--------------/    \--------------/                  |
+ * +======================================================================+
+ *
+ * As can be seen on the diagram, rather than using a simple linked list,
+ * we use a pair of linked lists with alternating elements. This is a
+ * performance enhancement due to the fact that we only find out of the
+ * address of the next log block access once the current block has been
+ * completely read in. Obviously, this hurts performance, because we'd be
+ * keeping the device's I/O queue at only a 1 operation deep, thus
+ * incurring a large amount of I/O round-trip latency. Having two lists
+ * allows us to "prefetch" two log blocks ahead of where we are currently
+ * rebuilding L2ARC buffers.
+ *
+ * On-device data structures:
+ *
+ * L2ARC device header:	l2arc_dev_hdr_phys_t
+ * L2ARC log block:	l2arc_log_blk_phys_t
+ *
+ * L2ARC reconstruction:
+ *
+ * When writing data, we simply write in the standard rotary fashion,
+ * evicting buffers as we go and simply writing new data over them (writing
+ * a new log block every now and then). This obviously means that once we
+ * loop around the end of the device, we will start cutting into an already
+ * committed log block (and its referenced data buffers), like so:
+ *
+ *    current write head__       __old tail
+ *                        \     /
+ *                        V    V
+ * <--|bufs |lb |bufs |lb |    |bufs |lb |bufs |lb |-->
+ *                         ^    ^^^^^^^^^___________________________________
+ *                         |                                                \
+ *                   <<nextwrite>> may overwrite this blk and/or its bufs --'
+ *
+ * When importing the pool, we detect this situation and use it to stop
+ * our scanning process (see l2arc_rebuild).
+ *
+ * There is one significant caveat to consider when rebuilding ARC contents
+ * from an L2ARC device: what about invalidated buffers? Given the above
+ * construction, we cannot update blocks which we've already written to amend
+ * them to remove buffers which were invalidated. Thus, during reconstruction,
+ * we might be populating the cache with buffers for data that's not on the
+ * main pool anymore, or may have been overwritten!
+ *
+ * As it turns out, this isn't a problem. Every arc_read request includes
+ * both the DVA and, crucially, the birth TXG of the BP the caller is
+ * looking for. So even if the cache were populated by completely rotten
+ * blocks for data that had been long deleted and/or overwritten, we'll
+ * never actually return bad data from the cache, since the DVA with the
+ * birth TXG uniquely identify a block in space and time - once created,
+ * a block is immutable on disk. The worst thing we have done is wasted
+ * some time and memory at l2arc rebuild to reconstruct outdated ARC
+ * entries that will get dropped from the l2arc as it is being updated
+ * with new blocks.
  */
 
 static boolean_t
@@ -7568,7 +7784,7 @@ l2arc_dev_get_next(void)
 		else if (next == first)
 			break;
 
-	} while (vdev_is_dead(next->l2ad_vdev));
+	} while (vdev_is_dead(next->l2ad_vdev) && !next->l2ad_rebuild);
 
 	/* if we were unable to find any usable vdevs, return NULL */
 	if (vdev_is_dead(next->l2ad_vdev))
@@ -7728,10 +7944,12 @@ top:
 	kmem_cache_free(hdr_l2only_cache, head);
 	mutex_exit(&dev->l2ad_mtx);
 
+	ASSERT(dev->l2ad_vdev != NULL);
 	vdev_space_update(dev->l2ad_vdev, -bytes_dropped, 0, 0);
 
 	l2arc_do_free_on_write();
-
+	if (cb->abd != NULL)
+		abd_put(cb->abd);
 	kmem_free(cb, sizeof (l2arc_write_callback_t));
 }
 
@@ -8013,6 +8231,19 @@ l2arc_sublist_lock(int list_num)
 }
 
 /*
+ * Calculates the maximum overhead of L2ARC metadata log blocks for a given
+ * L2ARC write size. l2arc_evict and l2arc_write_buffers need to include this
+ * overhead in processing to make sure there is enough headroom available
+ * when writing buffers.
+ */
+static inline uint64_t
+l2arc_log_blk_overhead(uint64_t write_sz)
+{
+	return (write_sz / SPA_MINBLOCKSIZE / (L2ARC_LOG_BLK_ENTRIES + 1) *
+	    L2ARC_LOG_BLK_SIZE);
+}
+
+/*
  * Evict buffers from the device write hand to the distance specified in
  * bytes.  This distance may span populated buffers, it may span nothing.
  * This is clearing a region on the L2ARC device ready for writing.
@@ -8029,9 +8260,19 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 
 	buflist = &dev->l2ad_buflist;
 
-top:
-	rerun = B_FALSE;
-	if (dev->l2ad_hand >= (dev->l2ad_end - distance)) {
+	if (!all && dev->l2ad_first) {
+		/*
+		 * This is the first sweep through the device.  There is
+		 * nothing to evict.
+		 */
+		return;
+	}
+
+	/*
+	 * We need to add in the worst case scenario of log block overhead.
+	 */
+	distance += l2arc_log_blk_overhead(distance);
+	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * distance))) {
 		/*
 		 * When there is no space to accomodate upcoming writes,
 		 * evict to the end. Then bump the write hand to the start
@@ -8256,6 +8497,33 @@ error:
 	return (ret);
 }
 
+static void
+l2arc_blk_prefetch_done(zio_t *zio)
+{
+	l2arc_read_callback_t *cb;
+
+	cb = zio->io_private;
+	if (cb->l2rcb_abd != NULL)
+		abd_put(cb->l2rcb_abd);
+	kmem_free(cb, sizeof (l2arc_read_callback_t));
+}
+
+static void
+l2arc_blk_commit_done(zio_t *zio)
+{
+	l2arc_write_callback_t *cb;
+	l2arc_log_blk_buf_t *lb_buf;
+
+	cb = zio->io_private;
+
+	while ((lb_buf = list_remove_tail(&cb->l2wcb_log_blk_buflist)) != NULL)
+		vmem_free(lb_buf, sizeof (*lb_buf));
+	if (cb->abd != NULL)
+		abd_put(cb->abd);
+	list_destroy(&cb->l2wcb_log_blk_buflist);
+	kmem_free(cb, sizeof (l2arc_write_callback_t));
+}
+
 /*
  * Find and write ARC buffers to the L2ARC device.
  *
@@ -8273,9 +8541,10 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	arc_buf_hdr_t *hdr, *hdr_prev, *head;
 	uint64_t write_asize, write_psize, write_lsize, headroom;
 	boolean_t full;
-	l2arc_write_callback_t *cb;
-	zio_t *pio, *wzio;
+	l2arc_write_callback_t *cb = NULL, *cb_commit = NULL;
+	zio_t *pio, *pio_commit, *wzio;
 	uint64_t guid = spa_load_guid(spa);
+	boolean_t dev_hdr_update = B_FALSE;
 
 	ASSERT3P(dev->l2ad_vdev, !=, NULL);
 
@@ -8427,6 +8696,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				    sizeof (l2arc_write_callback_t), KM_SLEEP);
 				cb->l2wcb_dev = dev;
 				cb->l2wcb_head = head;
+				cb->abd = NULL;
 				pio = zio_root(spa, l2arc_write_done, cb,
 				    ZIO_FLAG_CANFAIL);
 			}
@@ -8461,6 +8731,27 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 			mutex_exit(hash_lock);
 
+			/*
+			 * Append buf info to current log and commit if full.
+			 * arcstat_l2_{size,asize} kstats are updated
+			 * internally.
+			 */
+			if (l2arc_log_blk_insert(dev, hdr)) {
+				cb_commit = kmem_alloc(
+				    sizeof (l2arc_write_callback_t), KM_SLEEP);
+				list_create(&cb_commit->l2wcb_log_blk_buflist,
+				    sizeof (l2arc_log_blk_buf_t),
+				    offsetof(l2arc_log_blk_buf_t, lbb_node));
+				cb_commit->abd = NULL;
+				pio_commit = zio_root(spa,
+				    l2arc_blk_commit_done,
+				    cb_commit, ZIO_FLAG_CANFAIL);
+				l2arc_log_blk_commit(dev, pio_commit,
+				    cb_commit);
+				dev_hdr_update = B_TRUE;
+				zio_wait(pio_commit);
+			}
+
 			zio_nowait(wzio);
 		}
 
@@ -8483,6 +8774,23 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ARCSTAT_INCR(arcstat_l2_write_bytes, write_psize);
 	ARCSTAT_INCR(arcstat_l2_lsize, write_lsize);
 	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
+
+	/*
+	 * If we wrote any logs as part of this write, update dev hdr
+	 * to point to it.
+	 */
+	if (dev_hdr_update)
+		l2arc_dev_hdr_update(dev, pio, cb);
+
+	/*
+	 * Bump device hand to the device start if it is approaching the end.
+	 * l2arc_evict() will already have evicted ahead for this case.
+	 */
+	if (dev->l2ad_hand + target_sz + l2arc_log_blk_overhead(target_sz) >=
+	    dev->l2ad_end) {
+		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_first = B_FALSE;
+	}
 
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
@@ -8595,25 +8903,39 @@ l2arc_feed_thread(void *unused)
 boolean_t
 l2arc_vdev_present(vdev_t *vd)
 {
-	l2arc_dev_t *dev;
+	return (l2arc_vdev_get(vd) != NULL);
+}
 
-	mutex_enter(&l2arc_dev_mtx);
+/*
+ * Returns the l2arc_dev_t associated with a particular vdev_t or NULL if
+ * the vdev_t isn't an L2ARC device.
+ */
+static l2arc_dev_t *
+l2arc_vdev_get(vdev_t *vd)
+{
+	l2arc_dev_t	*dev;
+	boolean_t	held = MUTEX_HELD(&l2arc_dev_mtx);
+
+	if (!held)
+		mutex_enter(&l2arc_dev_mtx);
 	for (dev = list_head(l2arc_dev_list); dev != NULL;
 	    dev = list_next(l2arc_dev_list, dev)) {
 		if (dev->l2ad_vdev == vd)
 			break;
 	}
-	mutex_exit(&l2arc_dev_mtx);
+	if (!held)
+		mutex_exit(&l2arc_dev_mtx);
 
-	return (dev != NULL);
+	return (dev);
 }
 
 /*
  * Add a vdev for use by the L2ARC.  By this point the spa has already
- * validated the vdev and opened it.
+ * validated the vdev and opened it. The `rebuild' flag indicates whether
+ * we should attempt a persistent L2ARC rebuild.
  */
 void
-l2arc_add_vdev(spa_t *spa, vdev_t *vd)
+l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
 	l2arc_dev_t *adddev;
 
@@ -8622,15 +8944,21 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	/*
 	 * Create a new l2arc device entry.
 	 */
-	adddev = kmem_zalloc(sizeof (l2arc_dev_t), KM_SLEEP);
+	adddev = vmem_zalloc(sizeof (l2arc_dev_t), KM_SLEEP);
 	adddev->l2ad_spa = spa;
 	adddev->l2ad_vdev = vd;
-	adddev->l2ad_start = VDEV_LABEL_START_SIZE;
+	/* leave extra size for an l2arc device header */
+	adddev->l2ad_dev_hdr_asize = MAX(sizeof (*adddev->l2ad_dev_hdr),
+	    1 << vd->vdev_ashift);
+	adddev->l2ad_start = VDEV_LABEL_START_SIZE + adddev->l2ad_dev_hdr_asize;
 	adddev->l2ad_end = VDEV_LABEL_START_SIZE + vdev_get_min_asize(vd);
+	ASSERT3U(adddev->l2ad_start, <, adddev->l2ad_end);
 	adddev->l2ad_hand = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
+	adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
+	    KM_SLEEP);
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -8649,6 +8977,16 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	mutex_enter(&l2arc_dev_mtx);
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
+	if (rebuild && l2arc_rebuild_enabled &&
+	    adddev->l2ad_end - adddev->l2ad_start > L2ARC_PERSIST_MIN_SIZE) {
+		/*
+		 * Just mark the device as pending for a rebuild. We won't
+		 * be starting a rebuild in line here as it would block pool
+		 * import. Instead spa_load_impl will hand that off to an
+		 * async task which will call l2arc_spa_rebuild_start.
+		 */
+		adddev->l2ad_rebuild = B_TRUE;
+	}
 	mutex_exit(&l2arc_dev_mtx);
 }
 
@@ -8658,20 +8996,26 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 void
 l2arc_remove_vdev(vdev_t *vd)
 {
-	l2arc_dev_t *dev, *nextdev, *remdev = NULL;
+	l2arc_dev_t *remdev = NULL;
 
 	/*
 	 * Find the device by vdev
 	 */
 	mutex_enter(&l2arc_dev_mtx);
-	for (dev = list_head(l2arc_dev_list); dev; dev = nextdev) {
-		nextdev = list_next(l2arc_dev_list, dev);
-		if (vd == dev->l2ad_vdev) {
-			remdev = dev;
-			break;
-		}
-	}
+	remdev = l2arc_vdev_get(vd);
 	ASSERT3P(remdev, !=, NULL);
+
+	/*
+	 * Cancel any ongoing or scheduled rebuild (race protection with
+	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
+	 */
+	if (remdev->l2ad_rebuild_began == B_TRUE) {
+		remdev->l2ad_rebuild_cancel = B_TRUE;
+		mutex_enter(&l2arc_rebuild_thr_lock);
+		while (remdev->l2ad_rebuild == B_TRUE)
+			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
+		mutex_exit(&l2arc_rebuild_thr_lock);
+	}
 
 	/*
 	 * Remove device from global list
@@ -8688,7 +9032,8 @@ l2arc_remove_vdev(vdev_t *vd)
 	list_destroy(&remdev->l2ad_buflist);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
-	kmem_free(remdev, sizeof (l2arc_dev_t));
+	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
+	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
 
 void
@@ -8701,6 +9046,8 @@ l2arc_init(void)
 
 	mutex_init(&l2arc_feed_thr_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&l2arc_feed_thr_cv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&l2arc_rebuild_thr_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&l2arc_rebuild_thr_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&l2arc_dev_mtx, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&l2arc_free_on_write_mtx, NULL, MUTEX_DEFAULT, NULL);
 
@@ -8725,6 +9072,8 @@ l2arc_fini(void)
 
 	mutex_destroy(&l2arc_feed_thr_lock);
 	cv_destroy(&l2arc_feed_thr_cv);
+	mutex_destroy(&l2arc_rebuild_thr_lock);
+	cv_destroy(&l2arc_rebuild_thr_cv);
 	mutex_destroy(&l2arc_dev_mtx);
 	mutex_destroy(&l2arc_free_on_write_mtx);
 
@@ -8754,6 +9103,778 @@ l2arc_stop(void)
 	while (l2arc_thread_exit != 0)
 		cv_wait(&l2arc_feed_thr_cv, &l2arc_feed_thr_lock);
 	mutex_exit(&l2arc_feed_thr_lock);
+}
+
+/*
+ * Punches out rebuild threads for the L2ARC devices in a spa. This should
+ * be called after pool import from the spa async thread, since starting
+ * these threads directly from spa_import() will make them part of the
+ * "zpool import" context and delay process exit (and thus pool import).
+ */
+void
+l2arc_spa_rebuild_start(spa_t *spa)
+{
+	/*
+	 * Locate the spa's l2arc devices and kick off rebuild threads.
+	 */
+	mutex_enter(&l2arc_dev_mtx);
+	for (int i = 0; i < spa->spa_l2cache.sav_count; i++) {
+		l2arc_dev_t *dev =
+		    l2arc_vdev_get(spa->spa_l2cache.sav_vdevs[i]);
+		if (dev == NULL) {
+			/* Don't attempt a rebuild if the vdev is UNAVAIL */
+			continue;
+		}
+		if (dev->l2ad_rebuild && !dev->l2ad_rebuild_cancel) {
+#ifdef	_KERNEL
+			(void) thread_create(NULL, 0,
+			    (void (*)(void *))l2arc_dev_rebuild_start, dev,
+			    0, &p0, TS_RUN,
+			    minclsyspri);
+#else
+			(void) l2arc_dev_rebuild_start;
+#endif
+		}
+	}
+	mutex_exit(&l2arc_dev_mtx);
+}
+
+/*
+ * Main entry point for L2ARC rebuilding.
+ */
+static void
+l2arc_dev_rebuild_start(l2arc_dev_t *dev)
+{
+	if (!dev->l2ad_rebuild_cancel) {
+		VERIFY(dev->l2ad_rebuild);
+		dev->l2ad_rebuild_began = B_TRUE;
+		(void) l2arc_rebuild(dev);
+		dev->l2ad_rebuild_began = B_FALSE;
+		dev->l2ad_rebuild = B_FALSE;
+	}
+
+	thread_exit();
+}
+
+/*
+ * This function implements the actual L2ARC metadata rebuild. It:
+ *
+ * 1) reads the device's header
+ * 2) if a good device header is found, starts reading the log block chain
+ * 3) restores each block's contents to memory (reconstructing arc_buf_hdr_t's)
+ *
+ * Operation stops under any of the following conditions:
+ *
+ * 1) We reach the end of the log blk chain (the back-reference in the blk is
+ *    invalid or loops over our starting point).
+ * 2) We encounter *any* error condition (cksum errors, io errors, looped
+ *    blocks, etc.).
+ */
+static int
+l2arc_rebuild(l2arc_dev_t *dev)
+{
+	vdev_t			*vd = dev->l2ad_vdev;
+	spa_t			*spa = vd->vdev_spa;
+	int			err;
+	l2arc_log_blk_phys_t	*this_lb, *next_lb;
+	uint8_t			*this_lb_buf, *next_lb_buf;
+	zio_t			*this_io = NULL, *next_io = NULL;
+	l2arc_log_blkptr_t	lb_ptrs[2];
+	boolean_t		first_pass, lock_held;
+	uint64_t		load_guid;
+
+	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
+	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
+	this_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
+	next_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
+
+	/*
+	 * We prevent device removal while issuing reads to the device,
+	 * then during the rebuilding phases we drop this lock again so
+	 * that a spa_unload or device remove can be initiated - this is
+	 * safe, because the spa will signal us to stop before removing
+	 * our device and wait for us to stop.
+	 */
+	spa_config_enter(spa, SCL_L2ARC, vd, RW_READER);
+	lock_held = B_TRUE;
+
+	load_guid = spa_load_guid(dev->l2ad_vdev->vdev_spa);
+	/*
+	 * Device header processing phase.
+	 */
+	if ((err = l2arc_dev_hdr_read(dev)) != 0) {
+		/* device header corrupted, start a new one */
+		bzero(dev->l2ad_dev_hdr, dev->l2ad_dev_hdr_asize);
+		goto out;
+	}
+
+	/* Retrieve the persistent L2ARC device state */
+	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
+	    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr +
+	    LBP_GET_PSIZE(&dev->l2ad_dev_hdr->dh_start_lbps[0]));
+	dev->l2ad_first = !!(dev->l2ad_dev_hdr->dh_flags &
+	    L2ARC_DEV_HDR_EVICT_FIRST);
+
+	/* Prepare the rebuild processing state */
+	bcopy(dev->l2ad_dev_hdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
+	first_pass = B_TRUE;
+
+	/* Start the rebuild process */
+	for (;;) {
+		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
+			/* We hit an invalid block address, end the rebuild. */
+			break;
+
+		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
+		    this_lb, next_lb, this_lb_buf, next_lb_buf,
+		    this_io, &next_io)) != 0)
+			break;
+
+		spa_config_exit(spa, SCL_L2ARC, vd);
+		lock_held = B_FALSE;
+
+		/* Protection against infinite loops of log blocks. */
+		if (l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
+		    lb_ptrs[0].lbp_daddr,
+		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
+		    !first_pass) {
+			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_loop_errors);
+			err = SET_ERROR(ELOOP);
+			break;
+		}
+
+		/*
+		 * Our memory pressure valve. If the system is running low
+		 * on memory, rather than swamping memory with new ARC buf
+		 * hdrs, we opt not to rebuild the L2ARC. At this point,
+		 * however, we have already set up our L2ARC dev to chain in
+		 * new metadata log blk, so the user may choose to re-add the
+		 * L2ARC dev at a later time to reconstruct it (when there's
+		 * less memory pressure).
+		 */
+		if (arc_reclaim_needed()) {
+			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_lowmem);
+			cmn_err(CE_NOTE, "System running low on memory, "
+			    "aborting L2ARC rebuild.");
+			err = SET_ERROR(ENOMEM);
+			break;
+		}
+
+		/*
+		 * Now that we know that the next_lb checks out alright, we
+		 * can start reconstruction from this lb - we can be sure
+		 * that the L2ARC write hand has not yet reached any of our
+		 * buffers.
+		 */
+		l2arc_log_blk_restore(dev, load_guid, this_lb,
+		    LBP_GET_PSIZE(&lb_ptrs[0]));
+
+		/*
+		 * End of list detection. We can look ahead two steps in the
+		 * blk chain and if the 2nd blk from this_lb dips below the
+		 * initial chain starting point, then we know two things:
+		 *	1) it can't be valid, and
+		 *	2) the next_lb's ARC entries might have already been
+		 *	partially overwritten and so we should stop before
+		 *	we restore it
+		 */
+		if (l2arc_range_check_overlap(
+		    this_lb->lb_back2_lbp.lbp_daddr, lb_ptrs[0].lbp_daddr,
+		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
+		    !first_pass)
+			break;
+
+		/* log blk restored, continue with next one in the list */
+		lb_ptrs[0] = lb_ptrs[1];
+		lb_ptrs[1] = this_lb->lb_back2_lbp;
+		PTR_SWAP(this_lb, next_lb);
+		PTR_SWAP(this_lb_buf, next_lb_buf);
+		this_io = next_io;
+		next_io = NULL;
+		first_pass = B_FALSE;
+
+		for (;;) {
+			if (dev->l2ad_rebuild_cancel) {
+				mutex_enter(&l2arc_rebuild_thr_lock);
+				dev->l2ad_rebuild = B_FALSE;
+				cv_signal(&l2arc_rebuild_thr_cv);
+				mutex_exit(&l2arc_rebuild_thr_lock);
+				err = SET_ERROR(ECANCELED);
+				goto out;
+			}
+			if (spa_config_tryenter(spa, SCL_L2ARC, vd,
+			    RW_READER)) {
+				lock_held = B_TRUE;
+				break;
+			}
+			/*
+			 * L2ARC config lock held by somebody in writer,
+			 * possibly due to them trying to remove us. They'll
+			 * likely to want us to shut down, so after a little
+			 * delay, we check l2ad_rebuild_cancel and retry
+			 * the lock again.
+			 */
+			delay(1);
+		}
+	}
+out:
+	if (next_io != NULL)
+		l2arc_log_blk_prefetch_abort(next_io);
+	vmem_free(this_lb, sizeof (*this_lb));
+	vmem_free(next_lb, sizeof (*next_lb));
+	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
+	vmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
+	if (err == 0)
+		ARCSTAT_BUMP(arcstat_l2_rebuild_successes);
+
+	if (lock_held)
+		spa_config_exit(spa, SCL_L2ARC, vd);
+
+	return (err);
+}
+
+/*
+ * Attempts to read the device header on the provided L2ARC device and writes
+ * it to `hdr'. On success, this function returns 0, otherwise the appropriate
+ * error code is returned.
+ */
+static int
+l2arc_dev_hdr_read(l2arc_dev_t *dev)
+{
+	int			err;
+	uint64_t		guid;
+	zio_cksum_t		cksum;
+	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
+	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
+	abd_t *abd;
+
+	guid = spa_guid(dev->l2ad_vdev->vdev_spa);
+
+	abd = abd_get_from_buf(hdr, hdr_asize); // free()ing ?
+
+	err = zio_wait(zio_read_phys(NULL, dev->l2ad_vdev,
+	    VDEV_LABEL_START_SIZE, hdr_asize, abd,
+	    ZIO_CHECKSUM_OFF, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
+	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
+	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
+
+	if (abd != NULL)
+		abd_put(abd);
+
+	if (err != 0) {
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
+		return (err);
+	}
+
+	if (hdr->dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
+		byteswap_uint64_array(hdr, sizeof (*hdr));
+
+	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid) {
+		/*
+		 * Attempt to rebuild a device containing no actual dev hdr
+		 * or containing a header from some other pool.
+		 */
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_unsupported);
+		return (SET_ERROR(ENOTSUP));
+	}
+
+	l2arc_dev_hdr_checksum(hdr, &cksum);
+	if (!ZIO_CHECKSUM_EQUAL(hdr->dh_self_cksum, cksum)) {
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_errors);
+		return (SET_ERROR(EINVAL));
+	}
+
+	return (0);
+}
+
+/*
+ * Reads L2ARC log blocks from storage and validates their contents.
+ *
+ * This function implements a simple prefetcher to make sure that while
+ * we're processing one buffer the L2ARC is already prefetching the next
+ * one in the chain.
+ *
+ * The arguments this_lp and next_lp point to the current and next log blk
+ * address in the block chain. Similarly, this_lb and next_lb hold the
+ * l2arc_log_blk_phys_t's of the current and next L2ARC blk. The this_lb_buf
+ * and next_lb_buf must be buffers of appropriate to hold a raw
+ * l2arc_log_blk_phys_t (they are used as catch buffers for read ops prior
+ * to buffer decompression).
+ *
+ * The `this_io' and `next_io' arguments are used for block prefetching.
+ * When issuing the first blk IO during rebuild, you should pass NULL for
+ * `this_io'. This function will then issue a sync IO to read the block and
+ * also issue an async IO to fetch the next block in the block chain. The
+ * prefetch IO is returned in `next_io'. On subsequent calls to this
+ * function, pass the value returned in `next_io' from the previous call
+ * as `this_io' and a fresh `next_io' pointer to hold the next prefetch IO.
+ * Prior to the call, you should initialize your `next_io' pointer to be
+ * NULL. If no prefetch IO was issued, the pointer is left set at NULL.
+ *
+ * On success, this function returns 0, otherwise it returns an appropriate
+ * error code. On error the prefetching IO is aborted and cleared before
+ * returning from this function. Therefore, if we return `success', the
+ * caller can assume that we have taken care of cleanup of prefetch IOs.
+ */
+static int
+l2arc_log_blk_read(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *this_lbp, const l2arc_log_blkptr_t *next_lbp,
+    l2arc_log_blk_phys_t *this_lb, l2arc_log_blk_phys_t *next_lb,
+    uint8_t *this_lb_buf, uint8_t *next_lb_buf,
+    zio_t *this_io, zio_t **next_io)
+{
+	int		err = 0;
+	zio_cksum_t	cksum;
+	abd_t		*abd = NULL;
+
+	ASSERT(this_lbp != NULL && next_lbp != NULL);
+	ASSERT(this_lb != NULL && next_lb != NULL);
+	ASSERT(this_lb_buf != NULL && next_lb_buf != NULL);
+	ASSERT(next_io != NULL && *next_io == NULL);
+	ASSERT(l2arc_log_blkptr_valid(dev, this_lbp));
+
+	/*
+	 * Check to see if we have issued the IO for this log blk in a
+	 * previous run. If not, this is the first call, so issue it now.
+	 */
+	if (this_io == NULL) {
+		this_io = l2arc_log_blk_prefetch(dev->l2ad_vdev, this_lbp,
+		    this_lb_buf);
+	}
+
+	/*
+	 * Peek to see if we can start issuing the next IO immediately.
+	 */
+	if (l2arc_log_blkptr_valid(dev, next_lbp)) {
+		/*
+		 * Start issuing IO for the next log blk early - this
+		 * should help keep the L2ARC device busy while we
+		 * decompress and restore this log blk.
+		 */
+		*next_io = l2arc_log_blk_prefetch(dev->l2ad_vdev, next_lbp,
+		    next_lb_buf);
+	}
+
+	/* Wait for the IO to read this log block to complete */
+	if ((err = zio_wait(this_io)) != 0) {
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
+		goto cleanup;
+	}
+
+	/* Make sure the buffer checks out */
+	fletcher_4_native(this_lb_buf, LBP_GET_PSIZE(this_lbp), NULL, &cksum);
+	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_errors);
+		err = SET_ERROR(EINVAL);
+		goto cleanup;
+	}
+
+	/* Now we can take our time decoding this buffer */
+	switch (LBP_GET_COMPRESS(this_lbp)) {
+	case ZIO_COMPRESS_OFF:
+		bcopy(this_lb_buf, this_lb, sizeof (*this_lb));
+		break;
+	case ZIO_COMPRESS_LZ4:
+		abd = abd_get_from_buf(this_lb_buf, LBP_GET_PSIZE(this_lbp));
+		if ((err = zio_decompress_data(LBP_GET_COMPRESS(this_lbp),
+		    abd, this_lb, LBP_GET_PSIZE(this_lbp),
+		    sizeof (*this_lb))) != 0) {
+			err = SET_ERROR(EINVAL);
+			goto cleanup;
+		}
+		break;
+	default:
+		err = SET_ERROR(EINVAL);
+		goto cleanup;
+	}
+	if (this_lb->lb_magic == BSWAP_64(L2ARC_LOG_BLK_MAGIC))
+		byteswap_uint64_array(this_lb, sizeof (*this_lb));
+	if (this_lb->lb_magic != L2ARC_LOG_BLK_MAGIC) {
+		err = SET_ERROR(EINVAL);
+		goto cleanup;
+	}
+cleanup:
+	/* Abort an in-flight prefetch I/O in case of error */
+	if (err != 0 && *next_io != NULL) {
+		l2arc_log_blk_prefetch_abort(*next_io);
+		*next_io = NULL;
+	}
+	if (abd != NULL)
+		abd_put(abd);
+	return (err);
+}
+
+/*
+ * Restores the payload of a log blk to ARC. This creates empty ARC hdr
+ * entries which only contain an l2arc hdr, essentially restoring the
+ * buffers to their L2ARC evicted state. This function also updates space
+ * usage on the L2ARC vdev to make sure it tracks restored buffers.
+ */
+static void
+l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
+    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize)
+{
+	uint64_t	size = 0, psize = 0, ipsize = 0;
+
+	for (int i = L2ARC_LOG_BLK_ENTRIES - 1; i >= 0; i--) {
+		/*
+		 * Restore goes in the reverse temporal direction to preserve
+		 * correct temporal ordering of buffers in the l2ad_buflist.
+		 * l2arc_hdr_restore also does a list_insert_tail instead of
+		 * list_insert_head on the l2ad_buflist:
+		 *
+		 *		LIST	l2ad_buflist		LIST
+		 *		HEAD  <------ (time) ------	TAIL
+		 * direction	+-----+-----+-----+-----+-----+    direction
+		 * of l2arc <== | buf | buf | buf | buf | buf | ===> of rebuild
+		 * fill		+-----+-----+-----+-----+-----+
+		 *		^				^
+		 *		|				|
+		 *		|				|
+		 *	l2arc_fill_thread		l2arc_rebuild
+		 *	places new bufs here		restores bufs here
+		 *
+		 * This also works when the restored bufs get evicted at any
+		 * point during the rebuild.
+		 * vdev_space_update() has to be called before
+		 * l2arc_hdr_restore(), to avoid underflow since the latter
+		 * may call the former under arc_hdr_destroy().
+		 */
+		size += LE_GET_LSIZE(&lb->lb_entries[i]);
+		psize += LE_GET_PSIZE(&lb->lb_entries[i]);
+		ipsize = LE_GET_PSIZE(&lb->lb_entries[i]);
+		vdev_space_update(dev->l2ad_vdev, ipsize, 0, 0);
+		l2arc_hdr_restore(&lb->lb_entries[i], dev, load_guid);
+	}
+
+	/*
+	 * Record rebuild stats:
+	 *	size		In-memory size of restored buffer data in ARC
+	 *	psize		Physical size of restored buffers in the L2ARC
+	 *	bufs		# of ARC buffer headers restored
+	 *	log_blks	# of L2ARC log entries processed during restore
+	 */
+	ARCSTAT_INCR(arcstat_l2_rebuild_size, size);
+	ARCSTAT_INCR(arcstat_l2_rebuild_psize, psize);
+	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, L2ARC_LOG_BLK_ENTRIES);
+	ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
+	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, lb_psize);
+	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, psize / lb_psize);
+}
+
+/*
+ * Restores a single ARC buf hdr from a log block. The ARC buffer is put
+ * into a state indicating that it has been evicted to L2ARC.
+ */
+static void
+l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
+    uint64_t load_guid)
+{
+	arc_buf_hdr_t		*hdr, *exists;
+	kmutex_t		*hash_lock;
+	arc_buf_contents_t	type = LE_GET_TYPE(le);
+	uint64_t		asize;
+
+	/*
+	 * Do all the allocation before grabbing any locks, this lets us
+	 * sleep if memory is full and we don't have to deal with failed
+	 * allocations.
+	 */
+	hdr = arc_buf_alloc_l2only(load_guid, LE_GET_LSIZE(le), type,
+	    dev, le->le_dva, le->le_daddr, LE_GET_PSIZE(le), le->le_birth,
+	    LE_GET_COMPRESS(le), le->le_protected);
+	asize = arc_hdr_size(hdr);
+
+	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
+	ARCSTAT_INCR(arcstat_l2_psize, asize);
+
+	mutex_enter(&dev->l2ad_mtx);
+	/*
+	 * We connect the l2hdr to the hdr only after the hdr is in the hash
+	 * table, otherwise the rest of the arc hdr manipulation machinery
+	 * might get confused.
+	 */
+	list_insert_tail(&dev->l2ad_buflist, hdr);
+	(void) zfs_refcount_add_many(&dev->l2ad_alloc, asize, hdr);
+	mutex_exit(&dev->l2ad_mtx);
+
+	exists = buf_hash_insert(hdr, &hash_lock);
+	if (exists) {
+		/* Buffer was already cached, no need to restore it. */
+		arc_hdr_destroy(hdr);
+		mutex_exit(hash_lock);
+		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
+		return;
+	}
+
+	mutex_exit(hash_lock);
+}
+
+/*
+ * Starts an asynchronous read IO to read a log block. This is used in log
+ * block reconstruction to start reading the next block before we are done
+ * decoding and reconstructing the current block, to keep the l2arc device
+ * nice and hot with read IO to process.
+ * The returned zio will contain a newly allocated memory buffers for the IO
+ * data which should then be freed by the caller once the zio is no longer
+ * needed (i.e. due to it having completed). If you wish to abort this
+ * zio, you should do so using l2arc_log_blk_prefetch_abort, which takes
+ * care of disposing of the allocated buffers correctly.
+ */
+static zio_t *
+l2arc_log_blk_prefetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
+    uint8_t *lb_buf)
+{
+	uint32_t		psize;
+	zio_t			*pio;
+	l2arc_read_callback_t	*cb;
+
+	psize = LBP_GET_PSIZE(lbp);
+	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
+	cb = kmem_alloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
+	cb->l2rcb_abd = abd_get_from_buf(lb_buf, psize);
+	pio = zio_root(vd->vdev_spa, l2arc_blk_prefetch_done, cb,
+	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
+	    ZIO_FLAG_DONT_RETRY);
+	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, psize,
+	    cb->l2rcb_abd, ZIO_CHECKSUM_OFF, NULL, NULL,
+	    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
+	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
+
+	return (pio);
+}
+
+/*
+ * Aborts a zio returned from l2arc_log_blk_prefetch and frees the data
+ * buffers allocated for it.
+ */
+static void
+l2arc_log_blk_prefetch_abort(zio_t *zio)
+{
+	(void) zio_wait(zio);
+}
+
+/*
+ * Creates a zio to update the device header on an l2arc device. The zio is
+ * initiated as a child of `pio'.
+ */
+static void
+l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
+    l2arc_write_callback_t *cb)
+{
+	zio_t			*wzio;
+	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
+	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
+
+	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
+	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
+	hdr->dh_alloc_space = zfs_refcount_count(&dev->l2ad_alloc);
+	hdr->dh_flags = 0;
+	if (dev->l2ad_first)
+		hdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
+
+	/* checksum operation goes last */
+	l2arc_dev_hdr_checksum(hdr, &hdr->dh_self_cksum);
+	cb->abd = abd_get_from_buf(hdr, hdr_asize);
+
+	wzio = zio_write_phys(pio, dev->l2ad_vdev, VDEV_LABEL_START_SIZE,
+	    hdr_asize, cb->abd, ZIO_CHECKSUM_OFF,
+	    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
+	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
+	(void) zio_nowait(wzio);
+}
+
+/*
+ * Commits a log block to the L2ARC device. This routine is invoked from
+ * l2arc_write_buffers when the log block fills up.
+ * This function allocates some memory to temporarily hold the serialized
+ * buffer to be written. This is then released in l2arc_write_done.
+ */
+static void
+l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
+    l2arc_write_callback_t *cb)
+{
+	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
+	uint64_t		psize, asize;
+	l2arc_log_blk_buf_t	*lb_buf;
+	zio_t			*wzio;
+
+	VERIFY3S(dev->l2ad_log_ent_idx, ==, L2ARC_LOG_BLK_ENTRIES);
+
+	/* link the buffer into the block chain */
+	lb->lb_back2_lbp = dev->l2ad_dev_hdr->dh_start_lbps[1];
+	lb->lb_magic = L2ARC_LOG_BLK_MAGIC;
+
+	/* try to compress the buffer */
+	lb_buf = vmem_zalloc(sizeof (*lb_buf), KM_SLEEP);
+	list_insert_tail(&cb->l2wcb_log_blk_buflist, lb_buf);
+	cb->abd = abd_get_from_buf(lb, sizeof (*lb));
+	psize = zio_compress_data(ZIO_COMPRESS_LZ4,
+	    cb->abd, lb_buf->lbb_log_blk, sizeof (*lb));
+
+	/* a log block is never entirely zero */
+	ASSERT(psize != 0);
+	asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
+	ASSERT(asize <= sizeof (lb_buf->lbb_log_blk));
+
+	/*
+	 * Update the start log blk pointer in the device header to point
+	 * to the log block we're about to write.
+	 */
+	dev->l2ad_dev_hdr->dh_start_lbps[1] =
+	    dev->l2ad_dev_hdr->dh_start_lbps[0];
+	dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
+	_NOTE(CONSTCOND)
+	LBP_SET_LSIZE(&dev->l2ad_dev_hdr->dh_start_lbps[0], sizeof (*lb));
+	LBP_SET_PSIZE(&dev->l2ad_dev_hdr->dh_start_lbps[0], asize);
+	LBP_SET_CHECKSUM(&dev->l2ad_dev_hdr->dh_start_lbps[0],
+	    ZIO_CHECKSUM_FLETCHER_4);
+	LBP_SET_TYPE(&dev->l2ad_dev_hdr->dh_start_lbps[0], 0);
+	if (asize < sizeof (*lb)) {
+		/* compression succeeded */
+		bzero(lb_buf->lbb_log_blk + psize, asize - psize);
+		LBP_SET_COMPRESS(&dev->l2ad_dev_hdr->dh_start_lbps[0],
+		    ZIO_COMPRESS_LZ4);
+	} else {
+		/* compression failed */
+		bcopy(lb, lb_buf->lbb_log_blk, sizeof (*lb));
+		LBP_SET_COMPRESS(&dev->l2ad_dev_hdr->dh_start_lbps[0],
+		    ZIO_COMPRESS_OFF);
+	}
+
+	/* checksum what we're about to write */
+	fletcher_4_native(lb_buf->lbb_log_blk, asize, NULL,
+	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
+
+	/* perform the write itself */
+	CTASSERT(L2ARC_LOG_BLK_SIZE >= SPA_MINBLOCKSIZE &&
+	    L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
+	abd_put(cb->abd);
+	cb->abd = abd_get_from_buf(lb_buf->lbb_log_blk, asize);
+	wzio = zio_write_phys(pio, dev->l2ad_vdev, dev->l2ad_hand,
+	    asize, cb->abd, ZIO_CHECKSUM_OFF, NULL, NULL,
+	    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
+	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
+	(void) zio_nowait(wzio);
+
+	dev->l2ad_hand += asize;
+	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
+
+	/* bump the kstats */
+	ARCSTAT_INCR(arcstat_l2_write_bytes, asize);
+	ARCSTAT_BUMP(arcstat_l2_log_blk_writes);
+	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, asize);
+	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio,
+	    dev->l2ad_log_blk_payload_asize / asize);
+
+	/* start a new log block */
+	dev->l2ad_log_ent_idx = 0;
+	dev->l2ad_log_blk_payload_asize = 0;
+}
+
+/*
+ * Validates an L2ARC log blk address to make sure that it can be read
+ * from the provided L2ARC device. Returns B_TRUE if the address is
+ * within the device's bounds, or B_FALSE if not.
+ */
+static boolean_t
+l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
+{
+	uint64_t psize = LBP_GET_PSIZE(lbp);
+	uint64_t end = lbp->lbp_daddr + psize;
+
+	/*
+	 * A log block is valid if all of the following conditions are true:
+	 * - it fits entirely between l2ad_start and l2ad_end
+	 * - it has a valid size
+	 */
+	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
+	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t));
+}
+
+/*
+ * Computes the checksum of `hdr' and stores it in `cksum'.
+ */
+static void
+l2arc_dev_hdr_checksum(const l2arc_dev_hdr_phys_t *hdr, zio_cksum_t *cksum)
+{
+	fletcher_4_native((uint8_t *)hdr +
+	    offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
+	    sizeof (*hdr) - offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
+	    NULL, cksum);
+}
+
+/*
+ * Inserts ARC buffer header `hdr' into the current L2ARC log blk on
+ * the device. The buffer being inserted must be present in L2ARC.
+ * Returns B_TRUE if the L2ARC log blk is full and needs to be committed
+ * to L2ARC, or B_FALSE if it still has room for more ARC buffers.
+ */
+static boolean_t
+l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
+{
+	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
+	l2arc_log_ent_phys_t	*le;
+	int			index = dev->l2ad_log_ent_idx++;
+
+	ASSERT3S(index, <, L2ARC_LOG_BLK_ENTRIES);
+	ASSERT(HDR_HAS_L2HDR(hdr));
+
+	le = &lb->lb_entries[index];
+	bzero(le, sizeof (*le));
+	le->le_dva = hdr->b_dva;
+	le->le_birth = hdr->b_birth;
+	le->le_daddr = hdr->b_l2hdr.b_daddr;
+	LE_SET_LSIZE(le, HDR_GET_LSIZE(hdr));
+	LE_SET_PSIZE(le, HDR_GET_PSIZE(hdr));
+	LE_SET_COMPRESS(le, HDR_GET_COMPRESS(hdr));
+	LE_SET_CHECKSUM(le, ZIO_CHECKSUM_FLETCHER_2);
+	LE_SET_TYPE(le, hdr->b_type);
+	if (HDR_PROTECTED(hdr))
+		le->le_protected = B_TRUE;
+	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
+
+	return (dev->l2ad_log_ent_idx == L2ARC_LOG_BLK_ENTRIES);
+}
+
+/*
+ * Checks whether a given L2ARC device address sits in a time-sequential
+ * range. The trick here is that the L2ARC is a rotary buffer, so we can't
+ * just do a range comparison, we need to handle the situation in which the
+ * range wraps around the end of the L2ARC device. Arguments:
+ *	bottom	Lower end of the range to check (written to earlier).
+ *	top	Upper end of the range to check (written to later).
+ *	check	The address for which we want to determine if it sits in
+ *		between the top and bottom.
+ *
+ * The 3-way conditional below represents the following cases:
+ *
+ *	bottom < top : Sequentially ordered case:
+ *	  <check>--------+-------------------+
+ *	                 |  (overlap here?)  |
+ *	 L2ARC dev       V                   V
+ *	 |---------------<bottom>============<top>--------------|
+ *
+ *	bottom > top: Looped-around case:
+ *	                      <check>--------+------------------+
+ *	                                     |  (overlap here?) |
+ *	 L2ARC dev                           V                  V
+ *	 |===============<top>---------------<bottom>===========|
+ *	 ^               ^
+ *	 |  (or here?)   |
+ *	 +---------------+---------<check>
+ *
+ *	top == bottom : Just a single address comparison.
+ */
+static inline boolean_t
+l2arc_range_check_overlap(uint64_t bottom, uint64_t top, uint64_t check)
+{
+	if (bottom < top)
+		return (bottom <= check && check <= top);
+	else if (bottom > top)
+		return (check <= top || bottom <= check);
+	else
+		return (check == top);
 }
 
 EXPORT_SYMBOL(arc_buf_size);
