@@ -323,8 +323,8 @@ If a read error is encountered on a cache device, that read I/O is reissued to
 the original storage pool device, which might be part of a mirrored or raidz
 configuration.
 .Pp
-The content of the cache devices is considered volatile, as is the case with
-other system caches.
+The content of the cache devices is persistent across reboots if their size
+exceeds 384MiB.
 .Ss Pool checkpoint
 Before starting critical procedures that include destructive actions (e.g
 .Nm zfs Cm destroy
