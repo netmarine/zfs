@@ -265,7 +265,7 @@ typedef struct l2arc_log_ent_phys {
  * before we hit the write head and restore potentially corrupted blocks).
  */
 #define	L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE	\
-	(SPA_MAXBLOCKSIZE * L2ARC_LOG_BLK_ENTRIES)
+	(L2ARC_LOG_BLK_SIZE * L2ARC_LOG_BLK_ENTRIES)
 /*
  * For the persistence and rebuild algorithms to operate reliably we need
  * the L2ARC device to at least be able to hold 3 full log blocks (otherwise
