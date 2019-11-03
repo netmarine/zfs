@@ -9074,10 +9074,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	boolean_t		first_pass, lock_held;
 	uint64_t		load_guid;
 
-	this_lb = kmem_zalloc(sizeof (*this_lb), KM_SLEEP);
-	next_lb = kmem_zalloc(sizeof (*next_lb), KM_SLEEP);
-	this_lb_buf = kmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
-	next_lb_buf = kmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
+	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
+	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
+	this_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
+	next_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
 
 	/*
 	 * We prevent device removal while issuing reads to the device,
@@ -9207,10 +9207,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 out:
 	if (next_io != NULL)
 		l2arc_log_blk_prefetch_abort(next_io);
-	kmem_free(this_lb, sizeof (*this_lb));
-	kmem_free(next_lb, sizeof (*next_lb));
-	kmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
-	kmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
+	vmem_free(this_lb, sizeof (*this_lb));
+	vmem_free(next_lb, sizeof (*next_lb));
+	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
+	vmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
 	if (err == 0)
 		ARCSTAT_BUMP(arcstat_l2_rebuild_successes);
 
