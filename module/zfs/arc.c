@@ -8890,19 +8890,6 @@ l2arc_remove_vdev(vdev_t *vd)
 	ASSERT3P(remdev, !=, NULL);
 
 	/*
-	 * Cancel any ongoing or scheduled rebuild (race protection with
-	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
-	 */
-	if (remdev->l2ad_rebuild == B_TRUE) {
-		remdev->l2ad_rebuild_cancel = B_TRUE;
-		mutex_enter(&l2arc_rebuild_thr_lock);
-		cv_signal(&l2arc_rebuild_thr_cv);	/* kick thread out of startup */
-		while (remdev->l2ad_rebuild == B_TRUE)
-			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
-		mutex_exit(&l2arc_rebuild_thr_lock);
-	}
-
-	/*
 	 * Remove device from global list
 	 */
 	list_remove(l2arc_dev_list, remdev);
