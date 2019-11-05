@@ -32,6 +32,7 @@
 #include <sys/zio_crypt.h>
 #include <sys/zthr.h>
 #include <sys/aggsum.h>
+#include <sys/dmu.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -314,6 +315,23 @@ typedef struct l2arc_log_blk_buf {
 #define	BLKPROP_GET_TYPE(field)		BF64_GET((field), 48, 8)
 #define	BLKPROP_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
 
+#define	BLKPROP_GET_LEVEL(field) 	BF64_GET((field), 56, 5)
+#define	BLKPROP_USES_CRYPT(field)	BF64_GET((field), 61, 1)
+#define	BLKPROP_SET_CRYPT(field, x)	BF64_SET((field), 61, 1, x)
+
+#define	BLKPROP_IS_ENCRYPTED(field)			\
+	(BLKPROP_USES_CRYPT(field) &&			\
+	BLKPROP_GET_LEVEL(field) <= 0 &&		\
+	DMU_OT_IS_ENCRYPTED(BLKPROP_GET_TYPE(field)))
+
+#define	BLKPROP_IS_AUTHENTICATED(field)			\
+	(BLKPROP_USES_CRYPT(field) &&			\
+	BLKPROP_GET_LEVEL(field) <= 0 &&		\
+	!DMU_OT_IS_ENCRYPTED(BLKPROP_GET_TYPE(field)))
+
+#define	BLKPROP_IS_PROTECTED(field)			\
+	(BLKPROP_IS_ENCRYPTED(field) || BLKPROP_IS_AUTHENTICATED(field))
+
 /* Macros for manipulating a l2arc_log_blkptr_t->lbp_prop field */
 #define	LBP_GET_LSIZE(lbp)		BLKPROP_GET_LSIZE((lbp)->lbp_prop)
 #define	LBP_SET_LSIZE(lbp, x)		BLKPROP_SET_LSIZE((lbp)->lbp_prop, x)
@@ -337,6 +355,23 @@ typedef struct l2arc_log_blk_buf {
 #define	LE_SET_CHECKSUM(le, x)		BLKPROP_SET_CHECKSUM((le)->le_prop, x)
 #define	LE_GET_TYPE(le)			BLKPROP_GET_TYPE((le)->le_prop)
 #define	LE_SET_TYPE(le, x)		BLKPROP_SET_TYPE((le)->le_prop, x)
+
+#define	LE_GET_LEVEL(le)		BLKPROP_GET_LEVEL((le)->le_prop)
+#define	LE_USES_CRYPT(le)		BLKPROP_USES_CRYPT((le)->le_prop)
+#define	LE_SET_CRYPT(le, x)		BLKPROP_SET_CRYPT((le)->le_prop, x)
+
+#define	LE_IS_ENCRYPTED(le)			\
+	(LE_USES_CRYPT(le) &&			\
+	LE_GET_LEVEL(le) <= 0 &&		\
+	DMU_OT_IS_ENCRYPTED(LE_GET_TYPE(le)))
+
+#define	LE_IS_AUTHENTICATED(le)			\
+	(LE_USES_CRYPT(le) &&			\
+	LE_GET_LEVEL(le) <= 0 &&		\
+	!DMU_OT_IS_ENCRYPTED(LE_GET_TYPE(le)))
+
+#define	LE_IS_PROTECTED(le)			\
+	(LE_IS_ENCRYPTED(le) || LE_IS_AUTHENTICATED(le))
 
 #define	PTR_SWAP(x, y)		\
 	do {			\
