@@ -8902,6 +8902,18 @@ l2arc_remove_vdev(vdev_t *vd)
 	ASSERT3P(remdev, !=, NULL);
 
 	/*
+	 * Cancel any ongoing or scheduled rebuild (race protection with
+	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
+	 */
+	if (remdev->l2ad_rebuild == B_TRUE && remdev->l2ad_rebuild_began == B_TRUE) {
+		remdev->l2ad_rebuild_cancel = B_TRUE;
+		mutex_enter(&l2arc_rebuild_thr_lock);
+		while (remdev->l2ad_rebuild == B_TRUE)
+			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
+		mutex_exit(&l2arc_rebuild_thr_lock);
+	}
+
+	/*
 	 * Remove device from global list
 	 */
 	list_remove(l2arc_dev_list, remdev);
@@ -9039,7 +9051,9 @@ l2arc_dev_rebuild_start(l2arc_dev_t *dev)
 {
 	if (!dev->l2ad_rebuild_cancel) {
 		VERIFY(dev->l2ad_rebuild);
+		dev->l2ad_rebuild_began = B_TRUE;
 		(void) l2arc_rebuild(dev);
+		dev->l2ad_rebuild_began = B_FALSE;
 		dev->l2ad_rebuild = B_FALSE;
 	}
 
@@ -9185,6 +9199,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 		for (;;) {
 			if (dev->l2ad_rebuild_cancel) {
+				mutex_enter(&l2arc_rebuild_thr_lock);
+				dev->l2ad_rebuild = B_FALSE;
+				cv_signal(&l2arc_rebuild_thr_cv);	/* kick thread out of startup */
+				mutex_exit(&l2arc_rebuild_thr_lock);
 				err = SET_ERROR(ECANCELED);
 				goto out;
 			}

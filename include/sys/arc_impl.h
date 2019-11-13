@@ -411,6 +411,7 @@ typedef struct l2arc_dev {
 	/* flag indicating whether a rebuild is scheduled or is going on */
 	boolean_t		l2ad_rebuild;
 	boolean_t		l2ad_rebuild_cancel;
+	boolean_t		l2ad_rebuild_began;
 } l2arc_dev_t;
 
 /*
