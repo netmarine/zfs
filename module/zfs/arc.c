@@ -8886,19 +8886,13 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 void
 l2arc_remove_vdev(vdev_t *vd)
 {
-	l2arc_dev_t *dev, *nextdev, *remdev = NULL;
+	l2arc_dev_t *remdev = NULL;
 
 	/*
 	 * Find the device by vdev
 	 */
 	mutex_enter(&l2arc_dev_mtx);
-	for (dev = list_head(l2arc_dev_list); dev; dev = nextdev) {
-		nextdev = list_next(l2arc_dev_list, dev);
-		if (vd == dev->l2ad_vdev) {
-			remdev = dev;
-			break;
-		}
-	}
+	remdev = l2arc_vdev_get(vd);
 	ASSERT3P(remdev, !=, NULL);
 
 	/*
