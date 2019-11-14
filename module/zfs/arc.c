@@ -8634,7 +8634,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 			/*
 			 * Append buf info to current log and commit if full.
-			 * arcstat_l2_{size,asize} kstats are updated internally.
+			 * arcstat_l2_{size,asize} kstats are updated
+			 * internally.
 			 */
 			if (l2arc_log_blk_insert(dev, hdr)) {
 				ASSERT(cb != NULL);
@@ -8899,7 +8900,8 @@ l2arc_remove_vdev(vdev_t *vd)
 	 * Cancel any ongoing or scheduled rebuild (race protection with
 	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
 	 */
-	if (remdev->l2ad_rebuild == B_TRUE && remdev->l2ad_rebuild_began == B_TRUE) {
+	if (remdev->l2ad_rebuild == B_TRUE &&
+	    remdev->l2ad_rebuild_began == B_TRUE) {
 		remdev->l2ad_rebuild_cancel = B_TRUE;
 		mutex_enter(&l2arc_rebuild_thr_lock);
 		while (remdev->l2ad_rebuild == B_TRUE)
@@ -9030,7 +9032,7 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			    0, &p0, TS_RUN,
 			    minclsyspri);
 #else
-			(void)l2arc_dev_rebuild_start;
+			(void) l2arc_dev_rebuild_start;
 #endif
 		}
 	}
@@ -9195,7 +9197,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			if (dev->l2ad_rebuild_cancel) {
 				mutex_enter(&l2arc_rebuild_thr_lock);
 				dev->l2ad_rebuild = B_FALSE;
-				cv_signal(&l2arc_rebuild_thr_cv);	/* kick thread out of startup */
+				cv_signal(&l2arc_rebuild_thr_cv);
 				mutex_exit(&l2arc_rebuild_thr_lock);
 				err = SET_ERROR(ECANCELED);
 				goto out;
@@ -9374,8 +9376,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	case ZIO_COMPRESS_LZ4:
 		abd = abd_get_from_buf(this_lb_buf, LBP_GET_PSIZE(this_lbp));
 		if ((err = zio_decompress_data(LBP_GET_COMPRESS(this_lbp),
-					abd,
-					this_lb, LBP_GET_PSIZE(this_lbp),
+		    abd, this_lb, LBP_GET_PSIZE(this_lbp),
 		    sizeof (*this_lb))) != 0) {
 			err = SET_ERROR(EINVAL);
 			goto cleanup;
@@ -9541,9 +9542,8 @@ l2arc_log_blk_prefetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
 	    ZIO_FLAG_DONT_RETRY);
 	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, psize,
-			cb->abd, ZIO_CHECKSUM_OFF,
-		    NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
-	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
+	    cb->abd, ZIO_CHECKSUM_OFF, NULL, NULL,
+	    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
 
 	return (pio);
@@ -9566,7 +9566,7 @@ l2arc_log_blk_prefetch_abort(zio_t *zio)
  */
 static void
 l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
-		l2arc_write_callback_t *cb)
+    l2arc_write_callback_t *cb)
 {
 	zio_t			*wzio;
 	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
@@ -9614,9 +9614,10 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	/* try to compress the buffer */
 	lb_buf = vmem_zalloc(sizeof (*lb_buf), KM_SLEEP);
 	list_insert_tail(&cb->l2wcb_log_blk_buflist, lb_buf);
-	cb->abd = abd_get_from_buf(lb, sizeof(*lb));
+	cb->abd = abd_get_from_buf(lb, sizeof (*lb));
 	psize = zio_compress_data(ZIO_COMPRESS_LZ4,
-		    cb->abd, lb_buf->lbb_log_blk, sizeof (*lb));
+	    cb->abd, lb_buf->lbb_log_blk, sizeof (*lb));
+
 	/* a log block is never entirely zero */
 	ASSERT(psize != 0);
 	asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
@@ -9646,6 +9647,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 		LBP_SET_COMPRESS(&dev->l2ad_dev_hdr->dh_start_lbps[0],
 		    ZIO_COMPRESS_OFF);
 	}
+
 	/* checksum what we're about to write */
 	fletcher_4_native(lb_buf->lbb_log_blk, asize, NULL,
 	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
@@ -9655,8 +9657,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	    L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
 	cb->abd2 = abd_get_from_buf(lb_buf->lbb_log_blk, asize);
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, dev->l2ad_hand,
-	    asize, cb->abd2,
-		ZIO_CHECKSUM_OFF, NULL, NULL,
+	    asize, cb->abd2, ZIO_CHECKSUM_OFF, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
 	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
 	(void) zio_nowait(wzio);
