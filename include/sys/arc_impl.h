@@ -459,7 +459,6 @@ typedef struct l2arc_write_callback {
 	list_t		l2wcb_log_blk_buflist;	/* in-flight log blocks */
 	abd_t		*abd;
 	abd_t		*abd2;
-	abd_t		*abd3;
 } l2arc_write_callback_t;
 
 struct arc_buf_hdr {
