@@ -520,8 +520,9 @@ If a read error is encountered on a cache device, that read I/O is reissued to
 the original storage pool device, which might be part of a mirrored or raidz
 configuration.
 .Pp
-The content of the cache devices is considered volatile, as is the case with
-other system caches.
+The content of the cache devices can be made non-volatile, see the
+.Sy l2cache_persistent
+zpool property.
 .Ss Pool checkpoint
 Before starting critical procedures that include destructive actions (e.g
 .Nm zfs Cm destroy
@@ -910,6 +911,11 @@ See
 .Xr spl-module-parameters 5
 for additional details.  The default value is
 .Sy off .
+.It Sy l2cache_persistent Ns = Ns Sy on Ns | Ns Sy off
+Controls whether the L2ARC is rebuilt at reboot and thus made persistent.
+When writing buffers to L2ARC, we periodically add some metadata to make sure
+we can pick them up after reboot to rebuilt the L2ARC, thus reducing the impact
+that any downtime has on the performance of storage systems with large caches.
 .It Sy version Ns = Ns Ar version
 The current on-disk version of the pool.
 This can be increased, but never decreased.

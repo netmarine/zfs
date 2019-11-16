@@ -2286,12 +2286,7 @@ vdev_reopen(vdev_t *vd)
 		if (vdev_readable(vd) && vdev_writeable(vd) &&
 		    vd->vdev_aux == &spa->spa_l2cache &&
 		    !l2arc_vdev_present(vd)) {
-			/*
-			 * When reopening we can assume persistent L2ARC is
-			 * supported, since we've already opened the device
-			 * in the past and prepended an L2ARC uberblock.
-			 */
-			l2arc_add_vdev(spa, vd, B_TRUE);
+			l2arc_add_vdev(spa, vd);
 		}
 	} else {
 		(void) vdev_validate(vd);

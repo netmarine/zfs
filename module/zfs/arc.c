@@ -865,20 +865,6 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 
-/*
- * Performance tuning of L2ARC persistence:
- *
- * l2arc_rebuild_enabled : Controls whether L2ARC device adds (either at
- *		pool import or when adding one manually later) will attempt
- *		to rebuild L2ARC buffer contents. In special circumstances,
- *		the administrator may want to set this to B_FALSE, if they
- *		are having trouble importing a pool or attaching an L2ARC
- *		device (e.g. the L2ARC device is slow to read in stored log
- *		metadata, or the metadata has become somehow
- *		fragmented/unusable).
- */
-boolean_t l2arc_rebuild_enabled = B_TRUE;
-
 /* L2ARC persistence rebuild control routines. */
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
 static int l2arc_rebuild(l2arc_dev_t *dev);
@@ -8823,7 +8809,7 @@ l2arc_vdev_get(vdev_t *vd)
  * we should attempt a persistent L2ARC rebuild.
  */
 void
-l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
+l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 {
 	l2arc_dev_t *adddev;
 
@@ -8865,7 +8851,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	mutex_enter(&l2arc_dev_mtx);
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
-	if (rebuild && l2arc_rebuild_enabled &&
+	if (spa->spa_l2cache_persistent &&
 	    adddev->l2ad_end - adddev->l2ad_start > L2ARC_PERSIST_MIN_SIZE) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
@@ -8897,11 +8883,10 @@ l2arc_remove_vdev(vdev_t *vd)
 	 * Cancel any ongoing or scheduled rebuild (race protection with
 	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
 	 */
-	if (remdev->l2ad_rebuild == B_TRUE &&
-	    remdev->l2ad_rebuild_began == B_TRUE) {
+	if (remdev->l2ad_rebuild_began == B_TRUE) {
 		remdev->l2ad_rebuild_cancel = B_TRUE;
 		mutex_enter(&l2arc_rebuild_thr_lock);
-		while (remdev->l2ad_rebuild == B_TRUE)
+		while (remdev->l2ad_rebuild_began == B_TRUE)
 			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
 		mutex_exit(&l2arc_rebuild_thr_lock);
 	}
@@ -9022,7 +9007,10 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			/* Don't attempt a rebuild if the vdev is UNAVAIL */
 			continue;
 		}
-		if (dev->l2ad_rebuild && !dev->l2ad_rebuild_cancel) {
+		if ((dev->l2ad_rebuild =
+		    (spa->spa_l2cache_persistent &&
+		    dev->l2ad_end - dev->l2ad_start >
+		    L2ARC_PERSIST_MIN_SIZE)) && !dev->l2ad_rebuild_cancel) {
 #ifdef	_KERNEL
 			(void) thread_create(NULL, 0,
 			    (void (*)(void *))l2arc_dev_rebuild_start, dev,
@@ -9047,7 +9035,6 @@ l2arc_dev_rebuild_start(l2arc_dev_t *dev)
 		dev->l2ad_rebuild_began = B_TRUE;
 		(void) l2arc_rebuild(dev);
 		dev->l2ad_rebuild_began = B_FALSE;
-		dev->l2ad_rebuild = B_FALSE;
 	}
 
 	thread_exit();
@@ -9193,7 +9180,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		for (;;) {
 			if (dev->l2ad_rebuild_cancel) {
 				mutex_enter(&l2arc_rebuild_thr_lock);
-				dev->l2ad_rebuild = B_FALSE;
+				dev->l2ad_rebuild_began = B_FALSE;
 				cv_signal(&l2arc_rebuild_thr_cv);
 				mutex_exit(&l2arc_rebuild_thr_lock);
 				err = SET_ERROR(ECANCELED);

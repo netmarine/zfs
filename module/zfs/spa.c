@@ -1894,14 +1894,8 @@ spa_load_l2cache(spa_t *spa)
 
 			(void) vdev_validate_aux(vd);
 
-			if (!vdev_is_dead(vd)) {
-				boolean_t do_rebuild = B_FALSE;
-
-				(void) nvlist_lookup_boolean_value(l2cache[i],
-				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
-				    &do_rebuild);
-				l2arc_add_vdev(spa, vd, do_rebuild);
-			}
+			if (!vdev_is_dead(vd))
+				l2arc_add_vdev(spa, vd);
 		}
 	}
 
@@ -4101,6 +4095,8 @@ spa_ld_get_props(spa_t *spa)
 		spa_prop_find(spa, ZPOOL_PROP_AUTOEXPAND, &spa->spa_autoexpand);
 		spa_prop_find(spa, ZPOOL_PROP_MULTIHOST, &spa->spa_multihost);
 		spa_prop_find(spa, ZPOOL_PROP_AUTOTRIM, &spa->spa_autotrim);
+		spa_prop_find(spa, ZPOOL_PROP_L2CACHE_PERSISTENT,
+		    &spa->spa_l2cache_persistent);
 		spa->spa_autoreplace = (autoreplace != 0);
 	}
 
@@ -5883,6 +5879,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_autoexpand = zpool_prop_default_numeric(ZPOOL_PROP_AUTOEXPAND);
 	spa->spa_multihost = zpool_prop_default_numeric(ZPOOL_PROP_MULTIHOST);
 	spa->spa_autotrim = zpool_prop_default_numeric(ZPOOL_PROP_AUTOTRIM);
+	spa->spa_l2cache_persistent =
+	    zpool_prop_default_numeric(ZPOOL_PROP_L2CACHE_PERSISTENT);
 
 	if (props != NULL) {
 		spa_configfile_set(spa, props, B_FALSE);
@@ -8561,6 +8559,11 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 				break;
 			case ZPOOL_PROP_MULTIHOST:
 				spa->spa_multihost = intval;
+				break;
+			case ZPOOL_PROP_L2CACHE_PERSISTENT:
+				spa->spa_l2cache_persistent = intval;
+				spa_async_request(spa,
+				    SPA_ASYNC_L2CACHE_REBUILD);
 				break;
 			default:
 				break;

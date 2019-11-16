@@ -300,7 +300,7 @@ void arc_fini(void);
  * Level 2 ARC
  */
 
-void l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild);
+void l2arc_add_vdev(spa_t *spa, vdev_t *vd);
 void l2arc_remove_vdev(vdev_t *vd);
 boolean_t l2arc_vdev_present(vdev_t *vd);
 void l2arc_init(void);
