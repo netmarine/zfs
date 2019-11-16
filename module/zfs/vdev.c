@@ -2291,7 +2291,7 @@ vdev_reopen(vdev_t *vd)
 			 * supported, since we've already opened the device
 			 * in the past and prepended an L2ARC uberblock.
 			 */
-			l2arc_add_vdev(spa, vd, B_TRUE);
+			l2arc_add_vdev(spa, vd, spa->spa_l2cache_persistent);
 		}
 	} else {
 		(void) vdev_validate(vd);

@@ -123,6 +123,10 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_MULTIHOST, "multihost", 0,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "MULTIHOST",
 	    boolean_table);
+	zprop_register_index(ZPOOL_PROP_L2CACHE_PERSISTENT,
+	    "l2cache_persistent", 0,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "L2CACHE_PERSISTENT",
+	    boolean_table);
 
 	/* default index properties */
 	zprop_register_index(ZPOOL_PROP_FAILUREMODE, "failmode",

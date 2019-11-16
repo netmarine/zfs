@@ -412,6 +412,7 @@ struct spa {
 	list_t		spa_leaf_list;		/* list of leaf vdevs */
 	uint64_t	spa_leaf_list_gen;	/* track leaf_list changes */
 	uint32_t	spa_hostid;		/* cached system hostid */
+	uint64_t	spa_l2cache_persistent; /* persistent L2ARC */
 
 	/* synchronization for threads in spa_wait */
 	kmutex_t	spa_activities_lock;
