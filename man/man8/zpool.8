@@ -910,6 +910,11 @@ See
 .Xr spl-module-parameters 5
 for additional details.  The default value is
 .Sy off .
+.It Sy l2cache_persistent Ns = Ns Sy on Ns | Ns Sy off
+Controls whether the L2ARC is rebuilt and thus made persistent across reboots.
+When writing buffers to L2ARC, we periodically add some metadata to make sure
+we can pick them up after reboot to rebuilt the L2ARC, thus reducing the impact
+that any downtime has on the performance of storage systems with large caches.
 .It Sy version Ns = Ns Ar version
 The current on-disk version of the pool.
 This can be increased, but never decreased.
