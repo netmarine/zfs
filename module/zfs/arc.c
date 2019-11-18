@@ -9807,7 +9807,7 @@ static void
 l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
     const l2arc_log_blk_phys_t *lb, uint64_t lb_psize)
 {
-	uint64_t	size = 0, psize = 0;
+	uint64_t	size = 0, psize = 0, ipsize = 0;
 
 	for (int i = L2ARC_LOG_BLK_ENTRIES - 1; i >= 0; i--) {
 		/*
@@ -9829,10 +9829,15 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 		 *
 		 * This also works when the restored bufs get evicted at any
 		 * point during the rebuild.
+		 * vdev_space_update() has to be called before
+		 * l2arc_hdr_restore(), to avoid underflow since the latter
+		 * may call the former under arc_hdr_destroy().
 		 */
-		l2arc_hdr_restore(&lb->lb_entries[i], dev, load_guid);
 		size += LE_GET_LSIZE(&lb->lb_entries[i]);
 		psize += LE_GET_PSIZE(&lb->lb_entries[i]);
+		ipsize = LE_GET_PSIZE(&lb->lb_entries[i]);
+		vdev_space_update(dev->l2ad_vdev, ipsize, 0, 0);
+		l2arc_hdr_restore(&lb->lb_entries[i], dev, load_guid);
 	}
 
 	/*
@@ -9848,7 +9853,6 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 	ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
 	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, lb_psize);
 	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, psize / lb_psize);
-	vdev_space_update(dev->l2ad_vdev, psize, 0, 0);
 }
 
 /*
