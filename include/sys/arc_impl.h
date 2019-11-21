@@ -252,7 +252,7 @@ typedef struct l2arc_log_ent_phys {
  *	32k		 0.39 %
  *	64k		 0.20 %
  *	128k		 0.10 %
- * Compression should be able to sequeeze these down by about a factor of 2x.
+ * Compression should be able to squeeze these down by about a factor of 2x.
  */
 #define	L2ARC_LOG_BLK_SIZE			(128 * 1024)	/* 128k */
 #define	L2ARC_LOG_BLK_HEADER_LEN		(128)
@@ -262,9 +262,11 @@ typedef struct l2arc_log_ent_phys {
 /*
  * Maximum amount of data in an l2arc log block (used to terminate rebuilding
  * before we hit the write head and restore potentially corrupted blocks).
+ * Since the max recordsize/volblocksize is 128Kbytes, the max payload would
+ * be 128Kbytes * 1023 entries.
  */
 #define	L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE	\
-	(L2ARC_LOG_BLK_SIZE * L2ARC_LOG_BLK_ENTRIES)
+	(128 * 1024 * L2ARC_LOG_BLK_ENTRIES)
 /*
  * For the persistence and rebuild algorithms to operate reliably we need
  * the L2ARC device to at least be able to hold 3 full log blocks (otherwise
