@@ -9652,7 +9652,8 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
 
-	abd_put(abd);
+	if (abd != NULL)
+		abd_put(abd);
 
 	if (err != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
@@ -9909,7 +9910,8 @@ l2arc_abd_free(zio_t *zio)
 	l2arc_write_callback_t *cb;
 
 	cb = zio->io_private;
-	abd_put(cb->abd);
+	if (cb->abd != NULL)
+		abd_put(cb->abd);
 	kmem_free(cb, sizeof (l2arc_read_callback_t));
 }
 
@@ -9955,7 +9957,6 @@ static void
 l2arc_log_blk_prefetch_abort(zio_t *zio)
 {
 	(void) zio_wait(zio);
-	abd_put(zio->io_abd);
 }
 
 /*
