@@ -9907,11 +9907,11 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 static void
 l2arc_abd_free(zio_t *zio)
 {
-	l2arc_write_callback_t *cb;
+	l2arc_read_callback_t *cb;
 
 	cb = zio->io_private;
-	if (cb->abd != NULL)
-		abd_put(cb->abd);
+	if (cb->l2rcb_abd != NULL)
+		abd_put(cb->l2rcb_abd);
 	kmem_free(cb, sizeof (l2arc_read_callback_t));
 }
 
@@ -9930,19 +9930,19 @@ static zio_t *
 l2arc_log_blk_prefetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
     uint8_t *lb_buf)
 {
-	uint32_t	psize;
-	zio_t		*pio;
-	l2arc_write_callback_t *cb;
+	uint32_t		psize;
+	zio_t			*pio;
+	l2arc_read_callback_t	*cb;
 
 	psize = LBP_GET_PSIZE(lbp);
 	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
-	cb = kmem_alloc(sizeof (l2arc_write_callback_t), KM_SLEEP);
-	cb->abd = abd_get_from_buf(lb_buf, psize);
+	cb = kmem_alloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
+	cb->l2rcb_abd = abd_get_from_buf(lb_buf, psize);
 	pio = zio_root(vd->vdev_spa, l2arc_abd_free, cb, ZIO_FLAG_DONT_CACHE |
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
 	    ZIO_FLAG_DONT_RETRY);
 	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, psize,
-	    cb->abd, ZIO_CHECKSUM_OFF, NULL, NULL,
+	    cb->l2rcb_abd, ZIO_CHECKSUM_OFF, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
 
