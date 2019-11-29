@@ -9876,7 +9876,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	 */
 	hdr = arc_buf_alloc_l2only(load_guid, LE_GET_LSIZE(le), type,
 	    dev, le->le_dva, le->le_daddr, LE_GET_PSIZE(le), le->le_birth,
-	    LE_GET_COMPRESS(le), LE_IS_PROTECTED(le));
+	    LE_GET_COMPRESS(le), le->le_protected);
 	asize = arc_hdr_size(hdr);
 
 	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
@@ -10136,7 +10136,7 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	LE_SET_CHECKSUM(le, ZIO_CHECKSUM_FLETCHER_2);
 	LE_SET_TYPE(le, hdr->b_type);
 	if (HDR_PROTECTED(hdr))
-		LE_SET_CRYPT(le, B_TRUE);
+		le->le_protected = B_TRUE;
 	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
 
 	return (dev->l2ad_log_ent_idx == L2ARC_LOG_BLK_ENTRIES);
