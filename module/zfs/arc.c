@@ -8200,7 +8200,6 @@ l2arc_write_done(zio_t *zio)
 	arc_buf_hdr_t *head, *hdr, *hdr_prev;
 	kmutex_t *hash_lock;
 	int64_t bytes_dropped = 0;
-	l2arc_log_blk_buf_t *lb_buf;
 
 	cb = zio->io_private;
 	ASSERT3P(cb, !=, NULL);
@@ -8307,14 +8306,8 @@ top:
 	vdev_space_update(dev->l2ad_vdev, -bytes_dropped, 0, 0);
 
 	l2arc_do_free_on_write();
-
-	while ((lb_buf = list_remove_tail(&cb->l2wcb_log_blk_buflist)) != NULL)
-		vmem_free(lb_buf, sizeof (*lb_buf));
 	if (cb->abd != NULL)
 		abd_put(cb->abd);
-	if (cb->abd2 != NULL)
-		abd_put(cb->abd2);
-	list_destroy(&cb->l2wcb_log_blk_buflist);
 	kmem_free(cb, sizeof (l2arc_write_callback_t));
 }
 
@@ -8824,6 +8817,33 @@ error:
 	return (ret);
 }
 
+static void
+l2arc_abd_free(zio_t *zio)
+{
+	l2arc_read_callback_t *cb;
+
+	cb = zio->io_private;
+	if (cb->l2rcb_abd != NULL)
+		abd_put(cb->l2rcb_abd);
+	kmem_free(cb, sizeof (l2arc_read_callback_t));
+}
+
+static void
+l2arc_abd2_free(zio_t *zio)
+{
+	l2arc_write_callback_t *cb;
+	l2arc_log_blk_buf_t *lb_buf;
+
+	cb = zio->io_private;
+
+	while ((lb_buf = list_remove_tail(&cb->l2wcb_log_blk_buflist)) != NULL)
+		vmem_free(lb_buf, sizeof (*lb_buf));
+	if (cb->abd != NULL)
+		abd_put(cb->abd);
+	list_destroy(&cb->l2wcb_log_blk_buflist);
+	kmem_free(cb, sizeof (l2arc_write_callback_t));
+}
+
 /*
  * Find and write ARC buffers to the L2ARC device.
  *
@@ -8841,8 +8861,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	arc_buf_hdr_t *hdr, *hdr_prev, *head;
 	uint64_t write_asize, write_psize, write_lsize, headroom;
 	boolean_t full;
-	l2arc_write_callback_t *cb = NULL;
-	zio_t *pio, *wzio;
+	l2arc_write_callback_t *cb = NULL, *cb2 = NULL;
+	zio_t *pio, *pio2, *wzio;
 	uint64_t guid = spa_load_guid(spa);
 	boolean_t dev_hdr_update = B_FALSE;
 
@@ -8996,11 +9016,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				    sizeof (l2arc_write_callback_t), KM_SLEEP);
 				cb->l2wcb_dev = dev;
 				cb->l2wcb_head = head;
-				list_create(&cb->l2wcb_log_blk_buflist,
-				    sizeof (l2arc_log_blk_buf_t),
-				    offsetof(l2arc_log_blk_buf_t, lbb_node));
 				cb->abd = NULL;
-				cb->abd2 = NULL;
 				pio = zio_root(spa, l2arc_write_done, cb,
 				    ZIO_FLAG_CANFAIL);
 			}
@@ -9041,9 +9057,17 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * internally.
 			 */
 			if (l2arc_log_blk_insert(dev, hdr)) {
-				ASSERT(cb != NULL);
-				l2arc_log_blk_commit(dev, pio, cb);
+				cb2 = kmem_alloc(
+				    sizeof (l2arc_write_callback_t), KM_SLEEP);
+				list_create(&cb2->l2wcb_log_blk_buflist,
+				    sizeof (l2arc_log_blk_buf_t),
+				    offsetof(l2arc_log_blk_buf_t, lbb_node));
+				cb2->abd = NULL;
+				pio2 = zio_root(spa, l2arc_abd2_free, cb2,
+				    ZIO_FLAG_CANFAIL);
+				l2arc_log_blk_commit(dev, pio2, cb2);
 				dev_hdr_update = B_TRUE;
+				zio_wait(pio2);
 			}
 
 			(void) zio_nowait(wzio);
@@ -9904,17 +9928,6 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	mutex_exit(hash_lock);
 }
 
-static void
-l2arc_abd_free(zio_t *zio)
-{
-	l2arc_read_callback_t *cb;
-
-	cb = zio->io_private;
-	if (cb->l2rcb_abd != NULL)
-		abd_put(cb->l2rcb_abd);
-	kmem_free(cb, sizeof (l2arc_read_callback_t));
-}
-
 /*
  * Starts an asynchronous read IO to read a log block. This is used in log
  * block reconstruction to start reading the next block before we are done
@@ -9980,10 +9993,10 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 
 	/* checksum operation goes last */
 	l2arc_dev_hdr_checksum(hdr, &hdr->dh_self_cksum);
-	cb->abd2 = abd_get_from_buf(hdr, hdr_asize);
+	cb->abd = abd_get_from_buf(hdr, hdr_asize);
 
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, VDEV_LABEL_START_SIZE,
-	    hdr_asize, cb->abd2, ZIO_CHECKSUM_OFF,
+	    hdr_asize, cb->abd, ZIO_CHECKSUM_OFF,
 	    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
 	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
 	(void) zio_nowait(wzio);
