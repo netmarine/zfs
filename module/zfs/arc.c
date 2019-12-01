@@ -936,6 +936,8 @@ static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
     const arc_buf_hdr_t *ab);
 static inline boolean_t l2arc_range_check_overlap(uint64_t bottom,
     uint64_t top, uint64_t check);
+static void l2arc_blk_prefetch_done(zio_t *zio);
+static void l2arc_blk_commit_done(zio_t *zio);
 
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
@@ -8818,7 +8820,7 @@ error:
 }
 
 static void
-l2arc_abd_free(zio_t *zio)
+l2arc_blk_prefetch_done(zio_t *zio)
 {
 	l2arc_read_callback_t *cb;
 
@@ -8829,7 +8831,7 @@ l2arc_abd_free(zio_t *zio)
 }
 
 static void
-l2arc_abd2_free(zio_t *zio)
+l2arc_blk_commit_done(zio_t *zio)
 {
 	l2arc_write_callback_t *cb;
 	l2arc_log_blk_buf_t *lb_buf;
@@ -8861,8 +8863,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	arc_buf_hdr_t *hdr, *hdr_prev, *head;
 	uint64_t write_asize, write_psize, write_lsize, headroom;
 	boolean_t full;
-	l2arc_write_callback_t *cb = NULL, *cb2 = NULL;
-	zio_t *pio, *pio2, *wzio;
+	l2arc_write_callback_t *cb = NULL, *cb_commit = NULL;
+	zio_t *pio, *pio_commit, *wzio;
 	uint64_t guid = spa_load_guid(spa);
 	boolean_t dev_hdr_update = B_FALSE;
 
@@ -9057,17 +9059,19 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * internally.
 			 */
 			if (l2arc_log_blk_insert(dev, hdr)) {
-				cb2 = kmem_alloc(
+				cb_commit = kmem_alloc(
 				    sizeof (l2arc_write_callback_t), KM_SLEEP);
-				list_create(&cb2->l2wcb_log_blk_buflist,
+				list_create(&cb_commit->l2wcb_log_blk_buflist,
 				    sizeof (l2arc_log_blk_buf_t),
 				    offsetof(l2arc_log_blk_buf_t, lbb_node));
-				cb2->abd = NULL;
-				pio2 = zio_root(spa, l2arc_abd2_free, cb2,
-				    ZIO_FLAG_CANFAIL);
-				l2arc_log_blk_commit(dev, pio2, cb2);
+				cb_commit->abd = NULL;
+				pio_commit = zio_root(spa,
+				    l2arc_blk_commit_done,
+				    cb_commit, ZIO_FLAG_CANFAIL);
+				l2arc_log_blk_commit(dev, pio_commit,
+				    cb_commit);
 				dev_hdr_update = B_TRUE;
-				zio_wait(pio2);
+				zio_wait(pio_commit);
 			}
 
 			(void) zio_nowait(wzio);
@@ -9951,8 +9955,8 @@ l2arc_log_blk_prefetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
 	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
 	cb = kmem_alloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
 	cb->l2rcb_abd = abd_get_from_buf(lb_buf, psize);
-	pio = zio_root(vd->vdev_spa, l2arc_abd_free, cb, ZIO_FLAG_DONT_CACHE |
-	    ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
+	pio = zio_root(vd->vdev_spa, l2arc_blk_prefetch_done, cb,
+	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
 	    ZIO_FLAG_DONT_RETRY);
 	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, psize,
 	    cb->l2rcb_abd, ZIO_CHECKSUM_OFF, NULL, NULL,
