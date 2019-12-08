@@ -32,7 +32,6 @@
 #include <sys/zio_crypt.h>
 #include <sys/zthr.h>
 #include <sys/aggsum.h>
-#include <sys/dmu.h>
 
 #ifdef __cplusplus
 extern "C" {
