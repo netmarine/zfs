@@ -47,7 +47,7 @@ log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
 	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
 	--directory="/$TESTPOOL"
 
-for i in {1..10}; do
+for i in {1..100}; do
 	log_must zpool export $TESTPOOL
 	log_must zpool import -d $VDIR $TESTPOOL
 	log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
