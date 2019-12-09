@@ -894,3 +894,7 @@ tests = ['log_spacemap_import_logs']
 pre =
 post =
 tags = ['functional', 'log_spacemap']
+
+[tests/functional/persist_l2arc]
+tests = ['persist_l2arc_001_pos', 'persist_l2arc_002_pos']
+tags = ['functional', 'persist_l2arc']
