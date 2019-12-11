@@ -540,7 +540,6 @@ static arc_stats_t arc_stats = {
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_cksum_errors",	KSTAT_DATA_UINT64 },
-	{ "l2_rebuild_loop_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_lowmem",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_size",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_bufs",		KSTAT_DATA_UINT64 },
@@ -9547,6 +9546,17 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			/* We hit an invalid block address, end the rebuild. */
 			break;
 
+		/*
+		 * Protection against infinite loops of log blocks and end of
+		 * list detection.
+		 */
+		if (l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
+		    lb_ptrs[0].lbp_daddr,
+		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
+		    !first_pass) {
+			break;
+		}
+
 		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
 		    this_lb, next_lb, this_lb_buf, next_lb_buf,
 		    this_io, &next_io)) != 0)
@@ -9554,16 +9564,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 		spa_config_exit(spa, SCL_L2ARC, vd);
 		lock_held = B_FALSE;
-
-		/* Protection against infinite loops of log blocks. */
-		if (l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
-		    lb_ptrs[0].lbp_daddr,
-		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
-		    !first_pass) {
-			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_loop_errors);
-			err = SET_ERROR(ELOOP);
-			break;
-		}
 
 		/*
 		 * Our memory pressure valve. If the system is running low
@@ -9590,21 +9590,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 */
 		l2arc_log_blk_restore(dev, load_guid, this_lb,
 		    LBP_GET_PSIZE(&lb_ptrs[0]));
-
-		/*
-		 * End of list detection. We can look ahead two steps in the
-		 * blk chain and if the 2nd blk from this_lb dips below the
-		 * initial chain starting point, then we know two things:
-		 *	1) it can't be valid, and
-		 *	2) the next_lb's ARC entries might have already been
-		 *	partially overwritten and so we should stop before
-		 *	we restore it
-		 */
-		if (l2arc_range_check_overlap(
-		    this_lb->lb_back2_lbp.lbp_daddr, lb_ptrs[0].lbp_daddr,
-		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
-		    !first_pass)
-			break;
 
 		/* log blk restored, continue with next one in the list */
 		lb_ptrs[0] = lb_ptrs[1];
@@ -9642,6 +9627,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 out:
 	if (next_io != NULL)
 		l2arc_log_blk_prefetch_abort(next_io);
+	if (this_io != NULL)
+		l2arc_log_blk_prefetch_abort(this_io);
 	vmem_free(this_lb, sizeof (*this_lb));
 	vmem_free(next_lb, sizeof (*next_lb));
 	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));

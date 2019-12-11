@@ -263,19 +263,13 @@ typedef struct l2arc_log_ent_phys {
 /*
  * Maximum amount of data in an l2arc log block (used to terminate rebuilding
  * before we hit the write head and restore potentially corrupted blocks).
- * Since the max recordsize/volblocksize is 128Kbytes, the max payload would
- * be 128Kbytes * 1023 entries.
  */
 #define	L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE	\
-	(128 * 1024 * L2ARC_LOG_BLK_ENTRIES)
+	(SPA_MAXBLOCKSIZE * L2ARC_LOG_BLK_ENTRIES)
 /*
- * For the persistence and rebuild algorithms to operate reliably we need
- * the L2ARC device to at least be able to hold 3 full log blocks (otherwise
- * excessive log block looping might confuse the log chain end detection).
- * Under normal circumstances this is not a problem, since this is somewhere
- * around only 400 MB.
+ * The L2ARC device should be able to hold at least 1 full log block.
  */
-#define	L2ARC_PERSIST_MIN_SIZE	(3 * L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE)
+#define	L2ARC_PERSIST_MIN_SIZE	(L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE)
 
 /*
  * A log block of up to 1023 ARC buffer log entries, chained into the
@@ -732,7 +726,6 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_rebuild_abort_unsupported;
 	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_errors;
-	kstat_named_t arcstat_l2_rebuild_abort_loop_errors;
 	kstat_named_t arcstat_l2_rebuild_abort_lowmem;
 	kstat_named_t arcstat_l2_rebuild_size;
 	kstat_named_t arcstat_l2_rebuild_bufs;
