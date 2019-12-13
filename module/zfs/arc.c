@@ -9542,9 +9542,12 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 	/* Start the rebuild process */
 	for (;;) {
-		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
+		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0])) {
 			/* We hit an invalid block address, end the rebuild. */
+			if (this_io != NULL)
+				l2arc_log_blk_prefetch_abort(this_io);
 			break;
+		}
 
 		/*
 		 * Protection against infinite loops of log blocks and end of
@@ -9554,6 +9557,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		    lb_ptrs[0].lbp_daddr,
 		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
 		    !first_pass) {
+			if (this_io != NULL)
+				l2arc_log_blk_prefetch_abort(this_io);
 			break;
 		}
 
@@ -9627,8 +9632,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 out:
 	if (next_io != NULL)
 		l2arc_log_blk_prefetch_abort(next_io);
-	if (this_io != NULL)
-		l2arc_log_blk_prefetch_abort(this_io);
 	vmem_free(this_lb, sizeof (*this_lb));
 	vmem_free(next_lb, sizeof (*next_lb));
 	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
