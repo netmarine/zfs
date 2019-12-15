@@ -84,6 +84,8 @@ __thread_create(caddr_t stk, size_t  stksize, thread_func_t func,
 	thread_priv_t *tp;
 	struct task_struct *tsk;
 	char *p;
+	static int last_used_cpu = 0;
+	int cpu[4] = {0,1,6,7};
 
 	/* Option pp is simply ignored */
 	/* Variable stack size unsupported */
@@ -122,6 +124,9 @@ __thread_create(caddr_t stk, size_t  stksize, thread_func_t func,
 	    "%s", tp->tp_name);
 	if (IS_ERR(tsk))
 		return (NULL);
+
+	last_used_cpu = (last_used_cpu + 1) % 4;
+	kthread_bind(tsk, cpu[last_used_cpu]);
 
 	wake_up_process(tsk);
 	return ((kthread_t *)tsk);

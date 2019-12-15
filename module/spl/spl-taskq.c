@@ -29,11 +29,6 @@
 #include <sys/kmem.h>
 #include <sys/tsd.h>
 
-int spl_taskq_thread_bind = 0;
-module_param(spl_taskq_thread_bind, int, 0644);
-MODULE_PARM_DESC(spl_taskq_thread_bind, "Bind taskq thread to CPU by default");
-
-
 int spl_taskq_thread_dynamic = 1;
 module_param(spl_taskq_thread_dynamic, int, 0644);
 MODULE_PARM_DESC(spl_taskq_thread_dynamic, "Allow dynamic taskq threads");
@@ -978,6 +973,7 @@ static taskq_thread_t *
 taskq_thread_create(taskq_t *tq)
 {
 	static int last_used_cpu = 0;
+	int cpu[4] = {0,1,6,7};
 	taskq_thread_t *tqt;
 
 	tqt = kmem_alloc(sizeof (*tqt), KM_PUSHPAGE);
@@ -993,10 +989,8 @@ taskq_thread_create(taskq_t *tq)
 		return (NULL);
 	}
 
-	if (spl_taskq_thread_bind) {
-		last_used_cpu = (last_used_cpu + 1) % num_online_cpus();
-		kthread_bind(tqt->tqt_thread, last_used_cpu);
-	}
+	last_used_cpu = (last_used_cpu + 1) % 4;
+	kthread_bind(tqt->tqt_thread, cpu[last_used_cpu]);
 
 	if (spl_taskq_thread_priority)
 		set_user_nice(tqt->tqt_thread, PRIO_TO_NICE(tq->tq_pri));
@@ -1026,7 +1020,7 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 		ASSERT(nthreads >= 0);
 		nthreads = MIN(nthreads, 100);
 		nthreads = MAX(nthreads, 0);
-		nthreads = MAX((num_online_cpus() * nthreads) / 100, 1);
+		nthreads = MAX((4U * nthreads) / 100, 1);
 	}
 
 	tq = kmem_alloc(sizeof (*tq), KM_PUSHPAGE);
