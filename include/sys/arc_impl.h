@@ -32,6 +32,7 @@
 #include <sys/zio_crypt.h>
 #include <sys/zthr.h>
 #include <sys/aggsum.h>
+#include <sys/fs/zfs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -176,17 +177,20 @@ typedef struct l1arc_buf_hdr {
 	abd_t			*b_pabd;
 } l1arc_buf_hdr_t;
 
-enum {
+typedef enum l2arc_dev_hdr_flags_t {
 	L2ARC_DEV_HDR_EVICT_FIRST = (1 << 0)	/* mirror of l2ad_first */
-};
+} l2arc_dev_hdr_flags_t;
 
 /*
  * Pointer used in persistent L2ARC (for pointing to log blocks & ARC buffers).
  */
 typedef struct l2arc_log_blkptr {
-	uint64_t	lbp_daddr;	/* device address of log */
 	/*
-	 * lbp_prop is the same format as the blk_prop in blkptr_t:
+	 * Offset of log block within the device, in bytes
+	 */
+	uint64_t	lbp_daddr;
+	/*
+	 * lbp_prop has the following format:
 	 *	* logical size (in sectors)
 	 *	* physical (compressed) size (in sectors)
 	 *	* compression algorithm (we always LZ4-compress l2arc logs)
@@ -194,7 +198,7 @@ typedef struct l2arc_log_blkptr {
 	 *	* object type & level (unused for now)
 	 */
 	uint64_t	lbp_prop;
-	zio_cksum_t	lbp_cksum;	/* fletcher4 of log */
+	zio_cksum_t	lbp_cksum;	/* checksum of log */
 } l2arc_log_blkptr_t;
 
 /*
@@ -203,13 +207,14 @@ typedef struct l2arc_log_blkptr {
  */
 typedef struct l2arc_dev_hdr_phys {
 	uint64_t	dh_magic;	/* L2ARC_DEV_HDR_MAGIC */
+	uint64_t	dh_version;	/* Persistent L2ARC version */
 	zio_cksum_t	dh_self_cksum;	/* fletcher4 of fields below */
 
 	/*
 	 * Global L2ARC device state and metadata.
 	 */
 	uint64_t	dh_spa_guid;
-	uint64_t	dh_alloc_space;		/* vdev space alloc status */
+	uint64_t	dh_alloc_space;		/* vdev allocated bytes */
 	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
 
 	/*
@@ -218,7 +223,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 
-	const uint64_t	dh_pad[44];		/* pad to 512 bytes */
+	const uint64_t	dh_pad[43];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 
 /*
@@ -229,7 +234,7 @@ typedef struct l2arc_log_ent_phys {
 	uint64_t		le_birth;	/* birth txg of buffer */
 	zio_cksum_t		le_freeze_cksum;
 	/*
-	 * le_prop is the same format as the blk_prop in blkptr_t:
+	 * le_prop has the following format:
 	 *	* logical size (in sectors)
 	 *	* physical (compressed) size (in sectors)
 	 *	* compression algorithm
@@ -238,7 +243,7 @@ typedef struct l2arc_log_ent_phys {
 	 */
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
-	boolean_t		le_protected;
+	uint32_t		le_protected;   /* encryption status */
 	const uint32_t		le_pad[13];	/* resv'd for future use */
 } l2arc_log_ent_phys_t;
 
@@ -280,7 +285,14 @@ typedef struct l2arc_log_ent_phys {
 typedef struct l2arc_log_blk_phys {
 	/* Header - see L2ARC_LOG_BLK_HEADER_LEN above */
 	uint64_t		lb_magic;	/* L2ARC_LOG_BLK_MAGIC */
-	l2arc_log_blkptr_t	lb_back2_lbp;	/* back 2 steps in chain */
+	/*
+	 * There are 2 chains (headed by dh_start_lbps[2]), and this field
+	 * points back to the previous block in this chain. We alternate
+	 * which chain we append to, so they are time-wise and offset-wise
+	 * interleaved, but that is an optimization rather than for
+	 * correctness.
+	 */
+	l2arc_log_blkptr_t	lb_prev_lbp;	/* pointer to prev log block */
 	uint64_t		lb_pad[9];	/* resv'd for future use */
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_ENTRIES];
@@ -310,30 +322,6 @@ typedef struct l2arc_log_blk_buf {
 #define	BLKPROP_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
 #define	BLKPROP_GET_TYPE(field)		BF64_GET((field), 48, 8)
 #define	BLKPROP_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
-
-/* Macros for manipulating a l2arc_log_blkptr_t->lbp_prop field */
-#define	LBP_GET_LSIZE(lbp)		BLKPROP_GET_LSIZE((lbp)->lbp_prop)
-#define	LBP_SET_LSIZE(lbp, x)		BLKPROP_SET_LSIZE((lbp)->lbp_prop, x)
-#define	LBP_GET_PSIZE(lbp)		BLKPROP_GET_PSIZE((lbp)->lbp_prop)
-#define	LBP_SET_PSIZE(lbp, x)		BLKPROP_SET_PSIZE((lbp)->lbp_prop, x)
-#define	LBP_GET_COMPRESS(lbp)		BLKPROP_GET_COMPRESS((lbp)->lbp_prop)
-#define	LBP_SET_COMPRESS(lbp, x)	BLKPROP_SET_COMPRESS((lbp)->lbp_prop, x)
-#define	LBP_GET_CHECKSUM(lbp)		BLKPROP_GET_CHECKSUM((lbp)->lbp_prop)
-#define	LBP_SET_CHECKSUM(lbp, x)	BLKPROP_SET_CHECKSUM((lbp)->lbp_prop, x)
-#define	LBP_GET_TYPE(lbp)		BLKPROP_GET_TYPE((lbp)->lbp_prop)
-#define	LBP_SET_TYPE(lbp, x)		BLKPROP_SET_TYPE((lbp)->lbp_prop, x)
-
-/* Macros for manipulating a l2arc_log_ent_phys_t->le_prop field */
-#define	LE_GET_LSIZE(le)		BLKPROP_GET_LSIZE((le)->le_prop)
-#define	LE_SET_LSIZE(le, x)		BLKPROP_SET_LSIZE((le)->le_prop, x)
-#define	LE_GET_PSIZE(le)		BLKPROP_GET_PSIZE((le)->le_prop)
-#define	LE_SET_PSIZE(le, x)		BLKPROP_SET_PSIZE((le)->le_prop, x)
-#define	LE_GET_COMPRESS(le)		BLKPROP_GET_COMPRESS((le)->le_prop)
-#define	LE_SET_COMPRESS(le, x)		BLKPROP_SET_COMPRESS((le)->le_prop, x)
-#define	LE_GET_CHECKSUM(le)		BLKPROP_GET_CHECKSUM((le)->le_prop)
-#define	LE_SET_CHECKSUM(le, x)		BLKPROP_SET_CHECKSUM((le)->le_prop, x)
-#define	LE_GET_TYPE(le)			BLKPROP_GET_TYPE((le)->le_prop)
-#define	LE_SET_TYPE(le, x)		BLKPROP_SET_TYPE((le)->le_prop, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\
@@ -419,7 +407,7 @@ typedef struct l2arc_write_callback {
 	l2arc_dev_t	*l2wcb_dev;		/* device info */
 	arc_buf_hdr_t	*l2wcb_head;		/* head of write buflist */
 	list_t		l2wcb_log_blk_buflist;	/* in-flight log blocks */
-	abd_t		*abd;
+	abd_t		*l2wcb_abd;
 } l2arc_write_callback_t;
 
 struct arc_buf_hdr {
