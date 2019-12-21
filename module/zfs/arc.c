@@ -534,7 +534,9 @@ arc_stats_t arc_stats = {
 	{ "l2_rebuild_successes",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
-	{ "l2_rebuild_cksum_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_cksum_dh_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_cksum_lb_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_cksum_le_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_lowmem",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_size",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_bufs",		KSTAT_DATA_UINT64 },
@@ -1684,9 +1686,9 @@ arc_buf_try_copy_decompressed_data(arc_buf_t *buf)
 arc_buf_hdr_t *
 arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
     l2arc_dev_t *dev, dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
-    enum zio_compress compress, boolean_t protected)
+    enum zio_compress compress, uint64_t protected)
 {
-	arc_buf_hdr_t *hdr;
+	arc_buf_hdr_t	*hdr;
 
 	ASSERT(size != 0);
 	hdr = kmem_cache_alloc(hdr_l2only_cache, KM_SLEEP);
@@ -9315,8 +9317,6 @@ out:
 	vmem_free(next_lb, sizeof (*next_lb));
 	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
 	vmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
-	if (err == 0)
-		ARCSTAT_BUMP(arcstat_l2_rebuild_successes);
 
 	if (lock_held)
 		spa_config_exit(spa, SCL_L2ARC, vd);
@@ -9373,7 +9373,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	l2arc_dev_hdr_checksum(hdr, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(hdr->dh_self_cksum, cksum)) {
-		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_errors);
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_dh_errors);
 		return (SET_ERROR(EINVAL));
 	}
 
@@ -9458,7 +9458,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	fletcher_4_native(this_lb_buf,
 	    BLKPROP_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
-		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_errors);
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
 		err = SET_ERROR(EINVAL);
 		goto cleanup;
 	}
@@ -9511,8 +9511,23 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
     const l2arc_log_blk_phys_t *lb, uint64_t lb_psize)
 {
 	uint64_t	size = 0, psize = 0, ipsize = 0;
+	int		cksum_failed = 0, rebuilt_bufs = 0;
+	zio_cksum_t	cksum;
 
 	for (int i = L2ARC_LOG_BLK_ENTRIES - 1; i >= 0; i--) {
+		/*
+		 * Check the checksum of the log entry.
+		 */
+		fletcher_2_native(&lb->lb_entries[i],
+		    offsetof(l2arc_log_ent_phys_t, le_cksum) - 1, NULL,
+		    &cksum);
+		if (!ZIO_CHECKSUM_EQUAL(cksum,
+		    (&lb->lb_entries[i])->le_cksum)) {
+			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_le_errors);
+			cksum_failed++;
+			continue;
+		}
+
 		/*
 		 * Restore goes in the reverse temporal direction to preserve
 		 * correct temporal ordering of buffers in the l2ad_buflist.
@@ -9550,12 +9565,16 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 	 *	bufs		# of ARC buffer headers restored
 	 *	log_blks	# of L2ARC log entries processed during restore
 	 */
+	rebuilt_bufs = L2ARC_LOG_BLK_ENTRIES - cksum_failed;
 	ARCSTAT_INCR(arcstat_l2_rebuild_size, size);
 	ARCSTAT_INCR(arcstat_l2_rebuild_psize, psize);
-	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, L2ARC_LOG_BLK_ENTRIES);
-	ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
+	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, rebuilt_bufs);
 	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, lb_psize);
 	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, psize / lb_psize);
+	if (rebuilt_bufs > 0) {
+		ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
+		ARCSTAT_BUMP(arcstat_l2_rebuild_successes);
+	}
 }
 
 /*
@@ -9599,9 +9618,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	if (exists) {
 		/* Buffer was already cached, no need to restore it. */
 		arc_hdr_destroy(hdr);
-		mutex_exit(hash_lock);
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
-		return;
 	}
 
 	mutex_exit(hash_lock);
@@ -9838,6 +9855,10 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 		le->le_protected = 1;
 	else
 		le->le_protected = 0;
+
+	/* store the checksum of the log entry */
+	fletcher_2_native(le,
+	    offsetof(l2arc_log_ent_phys_t, le_cksum) - 1, NULL, &le->le_cksum);
 	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
 
 	return (dev->l2ad_log_ent_idx == L2ARC_LOG_BLK_ENTRIES);

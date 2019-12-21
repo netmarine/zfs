@@ -230,9 +230,8 @@ typedef struct l2arc_dev_hdr_phys {
  * A single ARC buffer header entry in a l2arc_log_blk_phys_t.
  */
 typedef struct l2arc_log_ent_phys {
-	dva_t			le_dva;	/* dva of buffer */
+	dva_t			le_dva;		/* dva of buffer */
 	uint64_t		le_birth;	/* birth txg of buffer */
-	zio_cksum_t		le_freeze_cksum;
 	/*
 	 * le_prop has the following format:
 	 *	* logical size (in sectors)
@@ -243,8 +242,9 @@ typedef struct l2arc_log_ent_phys {
 	 */
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
-	uint32_t		le_protected;   /* encryption status */
-	const uint32_t		le_pad[13];	/* resv'd for future use */
+	uint64_t		le_protected;   /* encryption status */
+	zio_cksum_t		le_cksum;	/* checksum of log entry */
+	const uint32_t		le_pad[12];	/* resv'd for future use */
 } l2arc_log_ent_phys_t;
 
 /*
@@ -714,7 +714,9 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_rebuild_successes;
 	kstat_named_t arcstat_l2_rebuild_abort_unsupported;
 	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
-	kstat_named_t arcstat_l2_rebuild_abort_cksum_errors;
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_dh_errors;
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_lb_errors;
+	kstat_named_t arcstat_l2_rebuild_abort_cksum_le_errors;
 	kstat_named_t arcstat_l2_rebuild_abort_lowmem;
 	kstat_named_t arcstat_l2_rebuild_size;
 	kstat_named_t arcstat_l2_rebuild_bufs;
