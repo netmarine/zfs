@@ -27,3 +27,17 @@ function cleanup
 		log_must zpool destroy -f $TESTPOOL
 	fi
 }
+
+#
+# Set l2arc_noprefetch tunable to $value
+#
+function sysctl_l2arc_noprefetch # value
+{
+	typeset value="$1"
+
+	if is_linux; then
+		log_note "Setting l2arch_noprefetch tunable to $value"
+		log_must eval "echo $value > "\
+		    "/sys/module/zfs/parameters/l2arc_noprefetch"
+	fi
+}
