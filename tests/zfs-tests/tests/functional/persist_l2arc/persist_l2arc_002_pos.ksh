@@ -38,12 +38,16 @@
 #	5. Import pool.
 #	6. Mount the encypted ZFS file system.
 #	7. Check in zpool iostat if the cache device has space allocated.
+#	8. Read the file written in (2) and check if l2_hits in
+#		/proc/spl/kstat/zfs/arcstats increased.
 #
 
 verify_runnable "global"
 
 log_assert "Persistent L2ARC with an encrypted ZFS file system succeeds."
 log_onexit cleanup
+
+sysctl_l2arc_noprefetch 0
 
 log_must zpool create $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
@@ -55,12 +59,22 @@ log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
 	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
 	--directory="/$TESTPOOL/$TESTFS1"
 
-for i in {1..10}; do
-	log_must zpool export $TESTPOOL
-	log_must zpool import -d $VDIR $TESTPOOL
-	log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
-	log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
-done
+log_must zpool export $TESTPOOL
+log_must zpool import -d $VDIR $TESTPOOL
+log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
+log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
+
+l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
+
+log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
+	--readwrite=randread --runtime=10 --time_based --iodepth=64 \
+	--directory="/$TESTPOOL/$TESTFS1"
+
+l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
+
+log_must test $l2_hits_end -gt $l2_hits_start
 
 log_must zpool destroy -f $TESTPOOL
 
