@@ -4,6 +4,7 @@ dist_pkgdata_SCRIPTS = \
 	setup.ksh \
 	persist_l2arc_001_pos.ksh \
 	persist_l2arc_002_pos.ksh
+	persist_l2arc_003_neg.ksh
 
 dist_pkgdata_DATA = \
 	persist_l2arc.cfg \

@@ -191,7 +191,7 @@ Default value: \fB200\fR%.
 .ad
 .RS 12n
 Do not write buffers to L2ARC if they were prefetched but not used by
-applications
+applications.
 .sp
 Use \fB1\fR for yes (default) and \fB0\fR to disable.
 .RE
@@ -202,7 +202,7 @@ Use \fB1\fR for yes (default) and \fB0\fR to disable.
 \fBl2arc_norw\fR (int)
 .ad
 .RS 12n
-No reads during writes
+No reads during writes.
 .sp
 Use \fB1\fR for yes and \fB0\fR for no (default).
 .RE
@@ -225,9 +225,23 @@ Default value: \fB8,388,608\fR.
 \fBl2arc_write_max\fR (ulong)
 .ad
 .RS 12n
-Max write bytes per interval
+Max write bytes per interval.
 .sp
 Default value: \fB8,388,608\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBl2arc_rebuild_enabled\fR (int)
+.ad
+.RS 12n
+Rebuild the L2ARC when importing a pool. This can be disabled if there are
+problems importing a pool or attaching an L2ARC device (e.g. the L2ARC device
+is slow in reading stored log metadata, or the metadata has become somehow
+fragmented/unusable).
+.sp
+Use \fB1\fR for yes (default) and \fB0\fR for no.
 .RE
 
 .sp

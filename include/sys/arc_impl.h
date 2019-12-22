@@ -224,6 +224,8 @@ typedef struct l2arc_dev_hdr_phys {
 	const uint64_t	dh_pad[43];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 
+CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
+
 /*
  * A single ARC buffer header entry in a l2arc_log_blk_phys_t.
  */
@@ -295,6 +297,10 @@ typedef struct l2arc_log_blk_phys {
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_ENTRIES];
 } l2arc_log_blk_phys_t;
+
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
+CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
+    offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
 
 /*
  * These structures hold in-flight l2arc_log_blk_phys_t's as they're being
@@ -706,20 +712,71 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_psize;
 	/* Not updated directly; only synced in arc_kstat_update. */
 	kstat_named_t arcstat_l2_hdr_size;
+	/*
+	 * Number of L2ARC log blocks written. These are used for restoring the
+	 * L2ARC.
+	 * Updated during writing of L2ARC log blocks.
+	 */
 	kstat_named_t arcstat_l2_log_blk_writes;
+	/*
+	 * Moving average of the size of the L2ARC log blocks, in bytes.
+	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
+	 */
 	kstat_named_t arcstat_l2_log_blk_avg_size;
+	/*
+	 * Moving average of the physical size of L2ARC restored data, in bytes
+	 * to the physical size of their metadata in ARC, in bytes.
+	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
+	 */
 	kstat_named_t arcstat_l2_data_to_meta_ratio;
-	kstat_named_t arcstat_l2_rebuild_successes;
+	/*
+	 * Number of times the L2ARC rebuild failed because the device header
+	 * was in an unsupported format.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_unsupported;
+	/*
+	 * Number of times the L2ARC rebuild failed because of IO errors
+	 * while reading the device header.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
+	/*
+	 * Number of times the L2ARC rebuild failed because the log block
+	 * pointers in the device header (dh_start_lbps) were corrupted.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_dh_errors;
+	/*
+	 * Number of L2ARC log blocks which had none of their log entries
+	 * (buffers) restored in ARC due to checksum errors.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_lb_errors;
+	/*
+	 * Number of L2ARc log entries (buffers) which failed to be restored
+	 * in ARC due to checksum errors.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_le_errors;
+	/*
+	 * Number of times the L2ARC rebuild was aborted due to low system
+	 * memory.
+	 */
 	kstat_named_t arcstat_l2_rebuild_abort_lowmem;
+	/* Logical size of L2ARC restored data, in bytes. */
 	kstat_named_t arcstat_l2_rebuild_size;
+	/*
+	 * Number of L2ARC log entries (buffers) that were successfully
+	 * restored in ARC.
+	 */
 	kstat_named_t arcstat_l2_rebuild_bufs;
+	/*
+	 * Number of L2ARc log entries (buffers) already cached in ARC. These
+	 * were not restored again.
+	 */
 	kstat_named_t arcstat_l2_rebuild_bufs_precached;
+	/* Physical size of L2ARC restored data, in bytes. */
 	kstat_named_t arcstat_l2_rebuild_psize;
+	/*
+	 * Number of L2ARC log blocks that were restored successfully. Each
+	 * log block holds L2ARC_LOG_BLK_ENTRIES buffers.
+	 */
 	kstat_named_t arcstat_l2_rebuild_log_blks;
 	kstat_named_t arcstat_memory_throttle_count;
 	kstat_named_t arcstat_memory_direct_count;
