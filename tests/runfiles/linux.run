@@ -930,6 +930,6 @@ tags = ['functional', 'zvol', 'zvol_swap']
 tests = ['many_fds', 'libzfs_input']
 tags = ['functional', 'libzfs']
 
-[tests/functional/persist_l2arc]
+[tests/functional/persist_l2arc:Linux]
 tests = ['persist_l2arc_003_neg']
 tags = ['functional', 'persist_l2arc']
