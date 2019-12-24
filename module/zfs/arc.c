@@ -9352,8 +9352,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	if (hdr->dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
 		byteswap_uint64_array(hdr, sizeof (*hdr));
 
-	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid ||
-	    hdr->dh_version != L2ARC_PERSISTENT_VERSION) {
+	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
 		 * or containing a header from some other pool or from another
@@ -9667,7 +9666,6 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
 
 	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
-	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 	hdr->dh_alloc_space = zfs_refcount_count(&dev->l2ad_alloc);
 	hdr->dh_flags = 0;
