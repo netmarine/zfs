@@ -7,5 +7,4 @@ dist_pkgdata_SCRIPTS = \
 	persist_l2arc_003_neg.ksh
 
 dist_pkgdata_DATA = \
-	persist_l2arc.cfg \
-	persist_l2arc.kshlib
+	persist_l2arc.cfg
