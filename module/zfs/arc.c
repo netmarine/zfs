@@ -9355,8 +9355,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
-		 * or containing a header from some other pool or from another
-		 * version of persistent L2ARC.
+		 * or containing a header from some other pool.
 		 */
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_unsupported);
 		return (SET_ERROR(ENOTSUP));
