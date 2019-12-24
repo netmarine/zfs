@@ -21,7 +21,6 @@
 #
 
 . $STF_SUITE/tests/functional/persist_l2arc/persist_l2arc.cfg
-. $STF_SUITE/tests/functional/persist_l2arc/persist_l2arc.kshlib
 
 verify_runnable "global"
 

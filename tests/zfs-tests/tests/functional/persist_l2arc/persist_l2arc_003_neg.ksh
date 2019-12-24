@@ -20,8 +20,8 @@
 # CDDL HEADER END
 #
 
+. $STF_SUITE/include/libtest.shlib
 . $STF_SUITE/tests/functional/persist_l2arc/persist_l2arc.cfg
-. $STF_SUITE/tests/functional/persist_l2arc/persist_l2arc.kshlib
 
 #
 # DESCRIPTION:
@@ -41,10 +41,25 @@
 verify_runnable "global"
 
 log_assert "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
+
+function cleanup
+{
+	if datasetexists $TESTPOOL ; then
+		log_must zpool destroy -f $TESTPOOL
+	fi
+
+	log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
+	log_must set_tunable32 l2arc_noprefetch $noprefetch
+}
 log_onexit cleanup
 
-sysctl_l2arc_noprefetch 0
-sysctl_l2arc_rebuild_enabled 0
+# l2arc_noprefetch is set to 0 to let L2ARC handle prefetches
+typeset noprefetch=$(get_tunable l2arc_noprefetch)
+log_must set_tunable32 l2arc_noprefetch 0
+
+# disable L2ARC rebuild
+typeset rebuild_enabled=$(get_tunable l2arc_rebuild_enabled)
+log_must set_tunable32 l2arc_rebuild_enabled 0
 
 log_must zpool create $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
