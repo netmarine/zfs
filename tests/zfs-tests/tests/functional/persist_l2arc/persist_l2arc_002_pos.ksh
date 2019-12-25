@@ -47,8 +47,8 @@ log_assert "Persistent L2ARC with an encrypted ZFS file system succeeds."
 
 function cleanup
 {
-	if datasetexists $TESTPOOL ; then
-		log_must zpool destroy -f $TESTPOOL
+	if poolexists $TESTPOOL ; then
+		destroy_pool $TESTPOOL
 	fi
 
 	log_must set_tunable32 l2arc_noprefetch $noprefetch

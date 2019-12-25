@@ -243,9 +243,8 @@ typedef struct l2arc_log_ent_phys {
 	 */
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
-	uint64_t		le_protected;   /* encryption status */
 	zio_cksum_t		le_cksum;	/* checksum of log entry */
-	const uint32_t		le_pad[12];	/* resv'd for future use */
+	const uint32_t		le_pad[14];	/* resv'd for future use */
 } l2arc_log_ent_phys_t;
 
 /*
@@ -327,6 +326,10 @@ typedef struct l2arc_log_blk_buf {
 #define	BLKPROP_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
 #define	BLKPROP_GET_TYPE(field)		BF64_GET((field), 48, 8)
 #define	BLKPROP_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
+#define	BLKPROP_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
+#define	BLKPROP_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
+#define	BLKPROP_GET_PREFETCH(field)	BF64_GET((field), 57, 1)
+#define	BLKPROP_SET_PREFETCH(field, x)	BF64_SET((field), 57, 1, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\

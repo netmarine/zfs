@@ -44,8 +44,8 @@ log_assert "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
 
 function cleanup
 {
-	if datasetexists $TESTPOOL ; then
-		log_must zpool destroy -f $TESTPOOL
+	if poolexists $TESTPOOL ; then
+		destroy_pool $TESTPOOL
 	fi
 
 	log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
@@ -71,18 +71,6 @@ log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL
 log_mustnot test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
-
-l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
-
-log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
-	--readwrite=randread --runtime=10 --time_based --iodepth=64 \
-	--directory="/$TESTPOOL"
-
-l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
-
-log_mustnot test $l2_hits_end -gt $l2_hits_start
 
 log_must zpool destroy -f $TESTPOOL
 
