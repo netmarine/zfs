@@ -1695,7 +1695,7 @@ arc_buf_try_copy_decompressed_data(arc_buf_t *buf)
 arc_buf_hdr_t *
 arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
     l2arc_dev_t *dev, dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
-    enum zio_compress compress, uint64_t protected)
+    enum zio_compress compress, boolean_t protected, boolean_t prefetch)
 {
 	arc_buf_hdr_t	*hdr;
 
@@ -1710,6 +1710,8 @@ arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
 	arc_hdr_set_compress(hdr, compress);
 	if (protected)
 		arc_hdr_set_flags(hdr, ARC_FLAG_PROTECTED);
+	if (prefetch)
+		arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 	hdr->b_spa = load_guid;
 
 	hdr->b_dva = dva;	/* needs to go after arc_hdr_set_* calls */
@@ -9923,7 +9925,9 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	hdr = arc_buf_alloc_l2only(load_guid, BLKPROP_GET_LSIZE((le)->le_prop),
 	    type, dev, le->le_dva, le->le_daddr,
 	    BLKPROP_GET_PSIZE((le)->le_prop), le->le_birth,
-	    BLKPROP_GET_COMPRESS((le)->le_prop), le->le_protected);
+	    BLKPROP_GET_COMPRESS((le)->le_prop),
+	    BLKPROP_GET_PROTECTED((le)->le_prop),
+	    BLKPROP_GET_PREFETCH((le)->le_prop));
 	asize = arc_hdr_size(hdr);
 
 	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
@@ -10171,10 +10175,8 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	BLKPROP_SET_COMPRESS((le)->le_prop, HDR_GET_COMPRESS(hdr));
 	BLKPROP_SET_CHECKSUM((le)->le_prop, ZIO_CHECKSUM_FLETCHER_2);
 	BLKPROP_SET_TYPE((le)->le_prop, hdr->b_type);
-	if (HDR_PROTECTED(hdr))
-		le->le_protected = 1;
-	else
-		le->le_protected = 0;
+	BLKPROP_SET_PROTECTED((le)->le_prop, !!(HDR_PROTECTED(hdr)));
+	BLKPROP_SET_PREFETCH((le)->le_prop, !!(HDR_PREFETCH(hdr)));
 
 	/* store the checksum of the log entry */
 	fletcher_2_native(le,
