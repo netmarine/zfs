@@ -205,6 +205,7 @@ typedef struct l2arc_log_blkptr {
  */
 typedef struct l2arc_dev_hdr_phys {
 	uint64_t	dh_magic;	/* L2ARC_DEV_HDR_MAGIC */
+	uint64_t	dh_version;	/* Persistent L2ARC version */
 	zio_cksum_t	dh_self_cksum;	/* fletcher4 of fields below */
 
 	/*
@@ -220,7 +221,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 
-	const uint64_t	dh_pad[44];		/* pad to 512 bytes */
+	const uint64_t	dh_pad[43];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
