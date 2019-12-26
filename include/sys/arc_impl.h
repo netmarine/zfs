@@ -222,7 +222,6 @@ typedef struct l2arc_dev_hdr_phys {
 
 	const uint64_t	dh_pad[43];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
-
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 
 /*
@@ -297,7 +296,6 @@ typedef struct l2arc_log_blk_phys {
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_ENTRIES];
 } l2arc_log_blk_phys_t;
-
 CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
 CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
     offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
