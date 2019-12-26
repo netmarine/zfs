@@ -194,7 +194,6 @@ typedef struct l2arc_log_blkptr {
 	 *	* physical (compressed) size (in sectors)
 	 *	* compression algorithm (we always LZ4-compress l2arc logs)
 	 *	* checksum algorithm (used for lbp_cksum)
-	 *	* object type (unused for now)
 	 */
 	uint64_t	lbp_prop;
 	zio_cksum_t	lbp_cksum;	/* checksum of log */
@@ -313,7 +312,7 @@ typedef struct l2arc_log_blk_buf {
 	list_node_t	lbb_node;
 } l2arc_log_blk_buf_t;
 
-/* Macros for the manipulation fields in le_prop and lbp_prop */
+/* Macros for setting fields in le_prop and lbp_prop */
 #define	BLKPROP_GET_LSIZE(field)	\
 	BF64_GET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1)
 #define	BLKPROP_SET_LSIZE(field, x)	\
