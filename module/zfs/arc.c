@@ -531,6 +531,7 @@ arc_stats_t arc_stats = {
 	{ "l2_log_blk_writes",		KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_avg_size",	KSTAT_DATA_UINT64 },
 	{ "l2_data_to_meta_ratio",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_success",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_cksum_dh_errors",	KSTAT_DATA_UINT64 },
@@ -9311,6 +9312,8 @@ out:
 	vmem_free(next_lb, sizeof (*next_lb));
 	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
 	vmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
+	if (err == 0)
+		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
 
 	if (lock_held)
 		spa_config_exit(spa, SCL_L2ARC, vd);

@@ -733,6 +733,10 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_l2_data_to_meta_ratio;
 	/*
+	 * Number of times the L2ARC rebuild was successful for an L2ARC device.
+	 */
+	kstat_named_t arcstat_l2_rebuild_success;
+	/*
 	 * Number of times the L2ARC rebuild failed because the device header
 	 * was in an unsupported format.
 	 */

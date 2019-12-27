@@ -69,8 +69,17 @@ log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
 	--directory="/$TESTPOOL"
 
 log_must zpool export $TESTPOOL
+
+l2_success_start=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
+
 log_must zpool import -d $VDIR $TESTPOOL
 log_mustnot test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
+
+l2_success_end=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
+
+log_mustnot test $l2_success_end -gt $l2_success_start
 
 log_must zpool destroy -f $TESTPOOL
 
