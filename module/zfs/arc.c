@@ -9358,7 +9358,8 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    hdr->dh_version != L2ARC_PERSISTENT_VERSION) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
-		 * or containing a header from some other pool.
+		 * or containing a header from some other pool or from another
+		 * version of persistent L2ARC.
 		 */
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_unsupported);
 		return (SET_ERROR(ENOTSUP));
