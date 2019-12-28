@@ -236,7 +236,7 @@ typedef struct l2arc_log_ent_phys {
 	 *	* logical size (in sectors)
 	 *	* physical (compressed) size (in sectors)
 	 *	* compression algorithm
-	 *	* checksum algorithm (used for b_freeze_cksum)
+	 *	* checksum algorithm (used for le_cksum)
 	 *	* object type (used to restore arc_buf_contents_t)
 	 *	* protected status (used for encryption)
 	 *	* prefetch status (used in l2arc_read_done())

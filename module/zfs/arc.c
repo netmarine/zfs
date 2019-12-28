@@ -9740,8 +9740,6 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	BLKPROP_SET_CHECKSUM(
 	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
 	    ZIO_CHECKSUM_FLETCHER_4);
-	BLKPROP_SET_TYPE(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop, 0);
 	if (asize < sizeof (*lb)) {
 		/* compression succeeded */
 		bzero(lb_buf->lbb_log_blk + psize, asize - psize);
