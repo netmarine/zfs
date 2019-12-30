@@ -301,6 +301,7 @@
 #include <sys/trace_zfs.h>
 #include <sys/aggsum.h>
 #include <cityhash.h>
+#include <sys/vdev_trim.h>
 
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
@@ -863,6 +864,17 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
+
+/*
+ * L2ARC TRIM
+ * l2arc_trim_ahead : A ZFS module parameter that controls how much ahead of
+ * 		the current write size we should TRIM. It is defined as a
+ * 		percentage of the write size. The minimum TRIM size is 64MB.
+ * 		If set to 100 and the write size is greater than 64MB we don't
+ * 		trim ahead. The default is twice the write size.
+ * 		If set to 0, TRIM is disabled for L2ARC.
+ */
+unsigned long l2arc_trim_ahead = 200;
 
 /*
  * Performance tuning of L2ARC persistence:
@@ -7709,7 +7721,7 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 static uint64_t
 l2arc_write_size(l2arc_dev_t *dev)
 {
-	uint64_t size, dev_size;
+	uint64_t size, dev_size, tsize;
 
 	/*
 	 * Make sure our globals have meaningful values in case the user
@@ -7732,7 +7744,11 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 * iteration can occur.
 	 */
 	dev_size = dev->l2ad_end - dev->l2ad_start;
-	if ((size + l2arc_log_blk_overhead(size, dev)) >= dev_size) {
+	tsize = size + l2arc_log_blk_overhead(size, dev);
+	if (dev->l2ad_vdev->vdev_has_trim && l2arc_trim_ahead > 0)
+		tsize = MAX(64 * 1024 * 1024, (tsize * l2arc_trim_ahead) / 100);
+
+	if (tsize >= dev_size) {
 		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
 		    "plus the overhead of log blocks (persistent L2ARC, "
 		    "%llu bytes) exceeds the size of the cache device "
@@ -8335,9 +8351,10 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	list_t *buflist;
 	arc_buf_hdr_t *hdr, *hdr_prev;
 	kmutex_t *hash_lock;
-	uint64_t taddr;
-	boolean_t rerun;
+	uint64_t taddr, lb_ptr_daddr, psize;
 	l2arc_lb_ptr_buf_t *lb_ptr_buf, *lb_ptr_buf_prev;
+	vdev_t *vd = dev->l2ad_vdev;
+	boolean_t rerun;
 
 	buflist = &dev->l2ad_buflist;
 
@@ -8345,6 +8362,14 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
 	distance += l2arc_log_blk_overhead(distance, dev);
+	if (vd->vdev_has_trim && l2arc_trim_ahead > 0) {
+		/*
+		 * Trim ahead 64MB or twice the write size, whichever is
+		 * greater.
+		 */
+		distance = MAX(64 * 1024 * 1024,
+		    (distance * l2arc_trim_ahead) / 100);
+	}
 
 top:
 	rerun = B_FALSE;
@@ -8365,25 +8390,42 @@ top:
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
-	/*
-	 * This check has to be placed after deciding whether to iterate
-	 * (rerun).
-	 */
-	if (!all && dev->l2ad_first) {
+	if (!all) {
 		/*
-		 * This is the first sweep through the device. There is
-		 * nothing to evict.
+		 * Trim the space to be evicted.
 		 */
-		goto out;
-	}
+		if (vd->vdev_has_trim && dev->l2ad_evict < taddr &&
+		    l2arc_trim_ahead > 0) {
+			vdev_trim_simple(vd,
+			    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
+			    taddr - dev->l2ad_evict, TRIM_TYPE_AUTO);
+		}
 
-	/*
-	 * When rebuilding L2ARC we retrieve the evict hand from the header of
-	 * the device. Of note, l2arc_evict() does not actually delete buffers
-	 * from the cache device, but keeping track of the evict hand will be
-	 * useful when TRIM is implemented.
-	 */
-	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
+		/*
+		 * When rebuilding L2ARC we retrieve the evict hand from the
+		 * header of the device. Of note, l2arc_evict() does not
+		 * actually delete buffers from the cache device, but trimming
+		 * may do so depending on the hardware implementation. Thus
+		 * keeping track of the evict hand is useful. In case we evict
+		 * everything (boolean all) we do not trim and there is no
+		 * subsequent call to l2arc_write_buffers() so the header of
+		 * the device and dh_evict will not be updated, which is the
+		 * intended behaviour.
+		 */
+		dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
+
+		/*
+		 * This check has to be placed after deciding whether to iterate
+		 * (rerun).
+		 */
+		if (dev->l2ad_first) {
+			/*
+			 * This is the first sweep through the device. There is
+			 * nothing to evict.
+			 */
+			goto out;
+		}
+	}
 
 retry:
 	mutex_enter(&dev->l2ad_mtx);
@@ -8397,6 +8439,8 @@ retry:
 	    lb_ptr_buf = lb_ptr_buf_prev) {
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
+		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
+		psize = L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 
 		/* L2BLK_GET_PSIZE returns aligned size for log blocks */
 		uint64_t asize = L2BLK_GET_PSIZE(
@@ -8410,7 +8454,7 @@ retry:
 		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
 			break;
 		} else {
-			vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
+			vdev_space_update(vd, -asize, 0, 0);
 			ARCSTAT_INCR(arcstat_l2_log_blk_asize, -asize);
 			ARCSTAT_BUMPDOWN(arcstat_l2_log_blk_count);
 			zfs_refcount_remove_many(&dev->l2ad_lb_asize, asize,
@@ -10259,6 +10303,9 @@ ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, headroom, ULONG, ZMOD_RW,
 
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, headroom_boost, ULONG, ZMOD_RW,
 	"Compressed l2arc_headroom multiplier");
+
+ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, trim_ahead, ULONG, ZMOD_RW,
+	"TRIM ahead L2ARC write size multiplier");
 
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, feed_secs, ULONG, ZMOD_RW,
 	"Seconds between L2ARC writing");
