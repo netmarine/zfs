@@ -1425,6 +1425,63 @@ vdev_autotrim_restart(spa_t *spa)
 		vdev_autotrim(spa);
 }
 
+/*
+ * A wrapper which calls vdev_trim_ranges(). It is intended to be called
+ * on leaf vdevs.
+ */
+int
+vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
+{
+	trim_args_t		ta;
+	range_seg_t 		logical_rs, physical_rs;
+	int			error;
+	logical_rs.rs_start = start;
+	logical_rs.rs_end = start + size;
+
+	ASSERT(vdev_is_concrete(vd));
+	ASSERT(vd->vdev_ops->vdev_op_leaf);
+	vdev_xlate(vd, &logical_rs, &physical_rs);
+
+	IMPLY(vd->vdev_top == vd,
+	    logical_rs.rs_start == physical_rs.rs_start);
+	IMPLY(vd->vdev_top == vd,
+	    logical_rs.rs_end == physical_rs.rs_end);
+
+	ta.trim_vdev = vd;
+	ta.trim_tree = range_tree_create(NULL, NULL);
+	ta.trim_type = type;
+	ta.trim_extent_bytes_max = zfs_trim_extent_bytes_max;
+	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
+	ta.trim_flags = 0;
+
+	ASSERT3U(physical_rs.rs_end, >=, physical_rs.rs_start);
+
+	/*
+	 * With raidz, it's possible that the logical range does not live on
+	 * this leaf vdev. We only add the physical range to this vdev's if it
+	 * has a length greater than 0.
+	 */
+	if (physical_rs.rs_end > physical_rs.rs_start) {
+		range_tree_add(ta.trim_tree, physical_rs.rs_start,
+		    physical_rs.rs_end - physical_rs.rs_start);
+	} else {
+		ASSERT3U(physical_rs.rs_end, ==, physical_rs.rs_start);
+	}
+
+	error = vdev_trim_ranges(&ta);
+
+	mutex_enter(&vd->vdev_trim_io_lock);
+	while (vd->vdev_trim_inflight[ta.trim_type] > 0) {
+		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
+	}
+	mutex_exit(&vd->vdev_trim_io_lock);
+
+	range_tree_vacate(ta.trim_tree, NULL, NULL);
+	range_tree_destroy(ta.trim_tree);
+
+	return (error);
+}
+
 #if defined(_KERNEL)
 EXPORT_SYMBOL(vdev_trim);
 EXPORT_SYMBOL(vdev_trim_stop);
@@ -1435,6 +1492,7 @@ EXPORT_SYMBOL(vdev_autotrim);
 EXPORT_SYMBOL(vdev_autotrim_stop_all);
 EXPORT_SYMBOL(vdev_autotrim_stop_wait);
 EXPORT_SYMBOL(vdev_autotrim_restart);
+EXPORT_SYMBOL(vdev_trim_simple);
 
 /* BEGIN CSTYLED */
 module_param(zfs_trim_extent_bytes_max, uint, 0644);

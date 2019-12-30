@@ -306,6 +306,7 @@
 #include <sys/trace_arc.h>
 #include <sys/aggsum.h>
 #include <sys/cityhash.h>
+#include <sys/vdev_trim.h>
 
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
@@ -8670,6 +8671,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	arc_buf_hdr_t *hdr, *hdr_prev;
 	kmutex_t *hash_lock;
 	uint64_t taddr;
+	vdev_t *vd = dev->l2ad_vdev;
 
 	buflist = &dev->l2ad_buflist;
 
@@ -8689,9 +8691,50 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 		taddr = dev->l2ad_end;
 	} else {
 		taddr = dev->l2ad_hand + distance;
+		/*
+		 * If vdev_trim_last_offset has previously reached the end
+		 * of the device but l2ad_hand has looped around, reset
+		 * vdev_trim_last_offset.
+		 */
+		if (vd->vdev_trim_last_offset == dev->l2ad_end)
+			vd->vdev_trim_last_offset = dev->l2ad_start;
 	}
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
+
+	/*
+	 * Trim the space to be evicted. Check that we do not evict the whole
+	 * device and that it has trim.
+	 */
+	if (!all && vd->vdev_has_trim) {
+		/*
+		 * If the size of the cache device is less than or equal to
+		 * (2 * distance) bytes then we should not account for
+		 * vdev_trim_last_offset when trimming because l2ad_hand will
+		 * always be within (2 * distance ) bytes from l2ad_end, and
+		 * vdev_trim_last_offset will not be reset.
+		 */
+		if ((dev->l2ad_end - dev->l2ad_start) > (2 * distance)) {
+			/*
+			 * We save taddr in vdev_trim_last_offset if the trim
+			 * was successfull, and if it is greater or equal to
+			 * taddr in the next run, skip trimming.
+			 */
+			if (vd->vdev_trim_last_offset < taddr) {
+				int err;
+				err = vdev_trim_simple(vd,
+				    vd->vdev_trim_last_offset,
+				    taddr - vd->vdev_trim_last_offset,
+				    TRIM_TYPE_AUTO);
+				if (err == 0) {
+					vd->vdev_trim_last_offset = taddr;
+				}
+			}
+		} else {
+			vdev_trim_simple(vd, dev->l2ad_hand,
+			    taddr - dev->l2ad_hand, TRIM_TYPE_AUTO);
+		}
+	}
 
 top:
 	mutex_enter(&dev->l2ad_mtx);
@@ -9266,6 +9309,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
+	vd->vdev_trim_last_offset = adddev->l2ad_start;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*

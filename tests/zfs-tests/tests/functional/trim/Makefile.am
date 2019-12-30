@@ -7,5 +7,6 @@ dist_pkgdata_SCRIPTS = \
 	autotrim_integrity.ksh \
 	autotrim_config.ksh \
 	autotrim_trim_integrity.ksh \
+	autotrim_l2arc.ksh \
 	trim_integrity.ksh \
 	trim_config.ksh
