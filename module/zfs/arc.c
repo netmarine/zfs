@@ -908,7 +908,6 @@ static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
 static inline boolean_t l2arc_range_check_overlap(uint64_t bottom,
     uint64_t top, uint64_t check);
 static void l2arc_blk_fetch_done(zio_t *zio);
-static void l2arc_blk_commit_done(zio_t *zio);
 
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
@@ -7833,6 +7832,7 @@ static void
 l2arc_write_done(zio_t *zio)
 {
 	l2arc_write_callback_t *cb;
+	l2arc_log_blk_abd_t *abd_buf;
 	l2arc_dev_t *dev;
 	list_t *buflist;
 	arc_buf_hdr_t *head, *hdr, *hdr_prev;
@@ -7944,8 +7944,13 @@ top:
 	vdev_space_update(dev->l2ad_vdev, -bytes_dropped, 0, 0);
 
 	l2arc_do_free_on_write();
+	while ((abd_buf = list_remove_tail(&cb->l2wcb_abd_list)) != NULL) {
+		abd_free(abd_buf->abd);
+		zio_buf_free(abd_buf, sizeof (*abd_buf));
+	}
 	if (cb->l2wcb_abd != NULL)
 		abd_put(cb->l2wcb_abd);
+	list_destroy(&cb->l2wcb_abd_list);
 	kmem_free(cb, sizeof (l2arc_write_callback_t));
 }
 
@@ -8504,22 +8509,6 @@ l2arc_blk_fetch_done(zio_t *zio)
 	kmem_free(cb, sizeof (l2arc_read_callback_t));
 }
 
-static void
-l2arc_blk_commit_done(zio_t *zio)
-{
-	l2arc_write_callback_t *cb;
-	l2arc_log_blk_buf_t *lb_buf;
-
-	cb = zio->io_private;
-
-	while ((lb_buf = list_remove_tail(&cb->l2wcb_log_blk_buflist)) != NULL)
-		zio_buf_free(lb_buf, sizeof (*lb_buf));
-	if (cb->l2wcb_abd != NULL)
-		abd_put(cb->l2wcb_abd);
-	list_destroy(&cb->l2wcb_log_blk_buflist);
-	kmem_free(cb, sizeof (l2arc_write_callback_t));
-}
-
 /*
  * Find and write ARC buffers to the L2ARC device.
  *
@@ -8537,8 +8526,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	arc_buf_hdr_t *hdr, *hdr_prev, *head;
 	uint64_t write_asize, write_psize, write_lsize, headroom;
 	boolean_t full;
-	l2arc_write_callback_t *cb = NULL, *cb_commit = NULL;
-	zio_t *pio, *pio_commit, *wzio;
+	l2arc_write_callback_t *cb = NULL;
+	zio_t *pio, *wzio;
 	uint64_t guid = spa_load_guid(spa);
 	boolean_t dev_hdr_update = B_FALSE;
 
@@ -8693,6 +8682,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				cb->l2wcb_dev = dev;
 				cb->l2wcb_head = head;
 				cb->l2wcb_abd = NULL;
+				list_create(&cb->l2wcb_abd_list,
+				    sizeof (l2arc_log_blk_abd_t),
+				    offsetof(l2arc_log_blk_abd_t, node));
 				pio = zio_root(spa, l2arc_write_done, cb,
 				    ZIO_FLAG_CANFAIL);
 			}
@@ -8733,19 +8725,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * internally.
 			 */
 			if (l2arc_log_blk_insert(dev, hdr)) {
-				cb_commit = kmem_alloc(
-				    sizeof (l2arc_write_callback_t), KM_SLEEP);
-				list_create(&cb_commit->l2wcb_log_blk_buflist,
-				    sizeof (l2arc_log_blk_buf_t),
-				    offsetof(l2arc_log_blk_buf_t, lbb_node));
-				cb_commit->l2wcb_abd = NULL;
-				pio_commit = zio_root(spa,
-				    l2arc_blk_commit_done,
-				    cb_commit, ZIO_FLAG_CANFAIL);
-				l2arc_log_blk_commit(dev, pio_commit,
-				    cb_commit);
+				l2arc_log_blk_commit(dev, pio, cb);
 				dev_hdr_update = B_TRUE;
-				zio_wait(pio_commit);
 			}
 
 			zio_nowait(wzio);
@@ -9684,7 +9665,6 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	/* checksum operation goes last */
 	l2arc_dev_hdr_checksum(hdr, &hdr->dh_self_cksum);
 	cb->l2wcb_abd = abd_get_from_buf(hdr, hdr_asize);
-
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, VDEV_LABEL_START_SIZE,
 	    hdr_asize, cb->l2wcb_abd, ZIO_CHECKSUM_OFF,
 	    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
@@ -9704,8 +9684,9 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 {
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
 	uint64_t		psize, asize;
-	l2arc_log_blk_buf_t	*lb_buf;
 	zio_t			*wzio;
+	l2arc_log_blk_abd_t	*abd_buf;
+	uint8_t			*tmpbuf;
 
 	VERIFY3S(dev->l2ad_log_ent_idx, ==, L2ARC_LOG_BLK_ENTRIES);
 
@@ -9714,16 +9695,17 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	lb->lb_magic = L2ARC_LOG_BLK_MAGIC;
 
 	/* try to compress the buffer */
-	lb_buf = zio_buf_alloc(sizeof (*lb_buf));
-	list_insert_tail(&cb->l2wcb_log_blk_buflist, lb_buf);
-	cb->l2wcb_abd = abd_get_from_buf(lb, sizeof (*lb));
+	tmpbuf = zio_buf_alloc(sizeof (*lb));
+	abd_buf = zio_buf_alloc(sizeof (*abd_buf));
+	abd_buf->abd = abd_get_from_buf(lb, sizeof (*lb));
+	list_insert_tail(&cb->l2wcb_abd_list, abd_buf);
 	psize = zio_compress_data(ZIO_COMPRESS_LZ4,
-	    cb->l2wcb_abd, lb_buf->lbb_log_blk, sizeof (*lb));
+	    abd_buf->abd, tmpbuf, sizeof (*lb));
 
 	/* a log block is never entirely zero */
 	ASSERT(psize != 0);
 	asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
-	ASSERT(asize <= sizeof (lb_buf->lbb_log_blk));
+	ASSERT(asize <= sizeof (*lb));
 
 	/*
 	 * Update the start log blk pointer in the device header to point
@@ -9742,29 +9724,30 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	    ZIO_CHECKSUM_FLETCHER_4);
 	if (asize < sizeof (*lb)) {
 		/* compression succeeded */
-		bzero(lb_buf->lbb_log_blk + psize, asize - psize);
+		bzero(tmpbuf + psize, asize - psize);
 		BLKPROP_SET_COMPRESS(
 		    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_LZ4);
 	} else {
 		/* compression failed */
-		bcopy(lb, lb_buf->lbb_log_blk, sizeof (*lb));
+		bcopy(lb, tmpbuf, sizeof (*lb));
 		BLKPROP_SET_COMPRESS(
 		    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_OFF);
 	}
 
 	/* checksum what we're about to write */
-	fletcher_4_native(lb_buf->lbb_log_blk, asize, NULL,
+	fletcher_4_native(tmpbuf, asize, NULL,
 	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
 
 	/* perform the write itself */
 	CTASSERT(L2ARC_LOG_BLK_SIZE >= SPA_MINBLOCKSIZE &&
 	    L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
-	abd_put(cb->l2wcb_abd);
-	cb->l2wcb_abd = abd_get_from_buf(lb_buf->lbb_log_blk, asize);
+	abd_put(abd_buf->abd);
+	abd_buf->abd = abd_get_from_buf(tmpbuf, sizeof (*lb));
+	abd_take_ownership_of_buf(abd_buf->abd, B_TRUE);
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, dev->l2ad_hand,
-	    asize, cb->l2wcb_abd, ZIO_CHECKSUM_OFF, NULL, NULL,
+	    asize, abd_buf->abd, ZIO_CHECKSUM_OFF, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
 	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
 	(void) zio_nowait(wzio);

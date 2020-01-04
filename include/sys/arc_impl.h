@@ -302,13 +302,13 @@ CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
     offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
 
 /*
- * These structures hold in-flight l2arc_log_blk_phys_t's as they're being
- * written to the L2ARC device. They may be compressed, hence the uint8_t[].
+ * These structures hold in-flight abd buffers for log blocks as they're being
+ * written to the L2ARC device.
  */
-typedef struct l2arc_log_blk_buf {
-	uint8_t		lbb_log_blk[sizeof (l2arc_log_blk_phys_t)];
-	list_node_t	lbb_node;
-} l2arc_log_blk_buf_t;
+typedef struct l2arc_log_blk_abd {
+	abd_t		*abd;
+	list_node_t	node;
+} l2arc_log_blk_abd_t;
 
 /* Macros for setting fields in le_prop and lbp_prop */
 #define	BLKPROP_GET_LSIZE(field)	\
@@ -413,8 +413,9 @@ typedef struct l2arc_buf_hdr {
 typedef struct l2arc_write_callback {
 	l2arc_dev_t	*l2wcb_dev;		/* device info */
 	arc_buf_hdr_t	*l2wcb_head;		/* head of write buflist */
-	list_t		l2wcb_log_blk_buflist;	/* in-flight log blocks */
-	abd_t		*l2wcb_abd;
+	abd_t		*l2wcb_abd;		/* abd for L2ARC dev header */
+	/* in-flight list of log blocks */
+	list_t		l2wcb_abd_list;
 } l2arc_write_callback_t;
 
 struct arc_buf_hdr {
