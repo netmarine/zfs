@@ -247,33 +247,35 @@ typedef struct l2arc_log_ent_phys {
 	const uint32_t		le_pad[14];	/* resv'd for future use */
 } l2arc_log_ent_phys_t;
 
-/*
- * These design limits give us the following metadata overhead (before
- * compression):
- *	avg_blk_sz	overhead
- *	1k		12.51 %
- *	2k		 6.26 %
- *	4k		 3.13 %
- *	8k		 1.56 %
- *	16k		 0.78 %
- *	32k		 0.39 %
- *	64k		 0.20 %
- *	128k		 0.10 %
- * Compression should be able to squeeze these down by about a factor of 2x.
- */
 #define	L2ARC_LOG_BLK_SIZE			(128 * 1024)	/* 128k */
 #define	L2ARC_LOG_BLK_HEADER_LEN		(128)
 #define	L2ARC_LOG_BLK_ENTRIES			/* 1023 entries */	\
 	((L2ARC_LOG_BLK_SIZE - L2ARC_LOG_BLK_HEADER_LEN) /		\
 	sizeof (l2arc_log_ent_phys_t))
+
 /*
  * Maximum amount of data in an l2arc log block (used to terminate rebuilding
  * before we hit the write head and restore potentially corrupted blocks).
  */
 #define	L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE	\
 	(SPA_MAXBLOCKSIZE * L2ARC_LOG_BLK_ENTRIES)
+
 /*
- * The L2ARC device should be able to hold at least 1 full log block.
+ * The L2ARC device should be able to hold at least 1 full log block for its
+ * contents to be restored (persistent L2ARC). This depends directly on the
+ * number of entries per log block. The log block header and each entry
+ * have a size of 128 bytes. Thus the lower the number of entries in a log
+ * block, the higher the overhead:
+ *  	Log Entries 	Min size (GB) 	Overhead
+ *	1023 		15.984375 	0.10%
+ *	511 		7.984375 	0.20%
+ *	255 		3.984375 	0.39%
+ *	127 		1.984375 	0.79%
+ *	63 		0.984375 	1.59%
+ *	31 		0.484375 	3.23%
+ *	15 		0.234375 	6.67%
+ *	7 		0.109375 	14.29%
+ *	3 		0.046875 	33.33%
  */
 #define	L2ARC_PERSIST_MIN_SIZE	(L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE)
 

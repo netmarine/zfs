@@ -9555,7 +9555,7 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 }
 
 /*
- * Restores a single ARC buf hdr from a log block. The ARC buffer is put
+ * Restores a single ARC buf hdr from a log entry. The ARC buffer is put
  * into a state indicating that it has been evicted to L2ARC.
  */
 static void
