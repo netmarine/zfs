@@ -8238,12 +8238,13 @@ l2arc_sublist_lock(int list_num)
  * when writing buffers.
  */
 static inline uint64_t
-l2arc_log_blk_overhead(uint64_t write_sz)
+l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 {
 	uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
 
 	return ((blocks * sizeof (l2arc_log_ent_phys_t)) +
-	    (blocks * L2ARC_LOG_BLK_HEADER_LEN / L2ARC_LOG_BLK_ENTRIES));
+	    (blocks * L2ARC_LOG_BLK_HEADER_LEN /
+	    dev->l2ad_dev_hdr->dh_log_blk_ent));
 }
 
 /*
@@ -8274,7 +8275,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	/*
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
-	distance += l2arc_log_blk_overhead(distance);
+	distance += l2arc_log_blk_overhead(distance, dev);
 	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * distance))) {
 		/*
 		 * When there is no space to accomodate upcoming writes,
@@ -8765,8 +8766,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * Bump device hand to the device start if it is approaching the end.
 	 * l2arc_evict() will already have evicted ahead for this case.
 	 */
-	if (dev->l2ad_hand + target_sz + l2arc_log_blk_overhead(target_sz) >=
-	    dev->l2ad_end) {
+	if (dev->l2ad_hand + target_sz +
+	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
@@ -8917,6 +8918,7 @@ void
 l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
 	l2arc_dev_t *adddev;
+	l2arc_dev_hdr_phys_t *hdr;
 
 	ASSERT(!l2arc_vdev_present(vd));
 
@@ -8936,7 +8938,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
-	adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
+	hdr = adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
 	    KM_SLEEP);
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
@@ -8951,13 +8953,28 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	zfs_refcount_create(&adddev->l2ad_alloc);
 
 	/*
+	 * The L2ARC has to hold at least the payload of one log block for
+	 * them to be restored (persistent L2ARC). The payload of a log block
+	 * depends on the amount of its log entries. The maximum amount of log
+	 * entries in a log block is set at 1023. Thus the maximum payload of
+	 * one log block is 1023 * SPA_MAXBLOCKSIZE = 16GB. If the L2ARC device
+	 * is less than that, reduce the amount of log entries per block so as
+	 * to enable persistence.
+	 */
+	uint32_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
+	    SPA_MAXBLOCKSHIFT) - 1;
+	if (log_entries > L2ARC_LOG_BLK_MAX_ENTRIES)
+		log_entries = L2ARC_LOG_BLK_MAX_ENTRIES;
+
+	hdr->dh_log_blk_ent = log_entries;
+
+	/*
 	 * Add device to global list
 	 */
 	mutex_enter(&l2arc_dev_mtx);
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
-	if (rebuild && l2arc_rebuild_enabled &&
-	    adddev->l2ad_end - adddev->l2ad_start > L2ARC_PERSIST_MIN_SIZE) {
+	if (rebuild && l2arc_rebuild_enabled && log_entries > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
@@ -9493,8 +9510,9 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 	uint64_t	size = 0, psize = 0;
 	int		cksum_failed = 0, rebuild_bufs = 0;
 	zio_cksum_t	cksum;
+	uint16_t	dh_log_entries = dev->l2ad_dev_hdr->dh_log_blk_ent;
 
-	for (int i = L2ARC_LOG_BLK_ENTRIES - 1; i >= 0; i--) {
+	for (int i = dh_log_entries - 1; i >= 0; i--) {
 		/*
 		 * Check the checksum of the log entry.
 		 */
@@ -9540,7 +9558,7 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 	 *	bufs		# of ARC buffer headers restored
 	 *	log_blks	# of L2ARC log entries processed during restore
 	 */
-	rebuild_bufs = L2ARC_LOG_BLK_ENTRIES - cksum_failed;
+	rebuild_bufs = dh_log_entries - cksum_failed;
 	ARCSTAT_INCR(arcstat_l2_rebuild_size, size);
 	ARCSTAT_INCR(arcstat_l2_rebuild_psize, psize);
 	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, rebuild_bufs);
@@ -9691,7 +9709,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	l2arc_log_blk_abd_t	*abd_buf;
 	uint8_t			*tmpbuf;
 
-	VERIFY3S(dev->l2ad_log_ent_idx, ==, L2ARC_LOG_BLK_ENTRIES);
+	VERIFY3S(dev->l2ad_log_ent_idx, ==, dev->l2ad_dev_hdr->dh_log_blk_ent);
 
 	/* link the buffer into the block chain */
 	lb->lb_prev_lbp = dev->l2ad_dev_hdr->dh_start_lbps[1];
@@ -9744,8 +9762,6 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
 
 	/* perform the write itself */
-	CTASSERT(L2ARC_LOG_BLK_SIZE >= SPA_MINBLOCKSIZE &&
-	    L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
 	abd_put(abd_buf->abd);
 	abd_buf->abd = abd_get_from_buf(tmpbuf, sizeof (*lb));
 	abd_take_ownership_of_buf(abd_buf->abd, B_TRUE);
@@ -9764,9 +9780,6 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, asize);
 	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio,
 	    dev->l2ad_log_blk_payload_asize / asize);
-
-	/* save the amount of log entries per block in the device header */
-	dev->l2ad_dev_hdr->dh_log_ent = dev->l2ad_log_ent_idx;
 
 	/* start a new log block */
 	dev->l2ad_log_ent_idx = 0;
@@ -9816,9 +9829,14 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 {
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
 	l2arc_log_ent_phys_t	*le;
-	int			index = dev->l2ad_log_ent_idx++;
+	l2arc_dev_hdr_phys_t	*dhdr = dev->l2ad_dev_hdr;
 
-	ASSERT3S(index, <, L2ARC_LOG_BLK_ENTRIES);
+	if (dhdr->dh_log_blk_ent == 0)
+		return (B_FALSE);
+
+	int index = dev->l2ad_log_ent_idx++;
+
+	ASSERT3S(index, <, dhdr->dh_log_blk_ent);
 	ASSERT(HDR_HAS_L2HDR(hdr));
 
 	le = &lb->lb_entries[index];
@@ -9839,7 +9857,7 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	    offsetof(l2arc_log_ent_phys_t, le_cksum) - 1, NULL, &le->le_cksum);
 	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
 
-	return (dev->l2ad_log_ent_idx == L2ARC_LOG_BLK_ENTRIES);
+	return (dev->l2ad_log_ent_idx == dev->l2ad_dev_hdr->dh_log_blk_ent);
 }
 
 /*

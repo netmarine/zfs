@@ -220,9 +220,9 @@ typedef struct l2arc_dev_hdr_phys {
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	uint32_t		dh_log_ent;	/* log entries per block */
+	uint16_t		dh_log_blk_ent;	/* entries per log blk */
 
-	const uint32_t	dh_pad[85];		/* pad to 512 bytes */
+	const uint16_t		dh_pad[171];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 
@@ -245,40 +245,14 @@ typedef struct l2arc_log_ent_phys {
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
 	zio_cksum_t		le_cksum;	/* checksum of log entry */
-	const uint32_t		le_pad[14];	/* resv'd for future use */
+	const uint32_t		le_pad[14];	/* pad to 128 bytes	 */
 } l2arc_log_ent_phys_t;
 
-#define	L2ARC_LOG_BLK_SIZE			(128 * 1024)	/* 128k */
+#define	L2ARC_LOG_BLK_MAX_SIZE			(128 * 1024)	/* 128k */
 #define	L2ARC_LOG_BLK_HEADER_LEN		(128)
-#define	L2ARC_LOG_BLK_ENTRIES			/* 1023 entries */	\
-	((L2ARC_LOG_BLK_SIZE - L2ARC_LOG_BLK_HEADER_LEN) /		\
+#define	L2ARC_LOG_BLK_MAX_ENTRIES		/* 1023 entries */	\
+	((L2ARC_LOG_BLK_MAX_SIZE - L2ARC_LOG_BLK_HEADER_LEN) /		\
 	sizeof (l2arc_log_ent_phys_t))
-
-/*
- * Maximum amount of data in an l2arc log block (used to terminate rebuilding
- * before we hit the write head and restore potentially corrupted blocks).
- */
-#define	L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE	\
-	(SPA_MAXBLOCKSIZE * L2ARC_LOG_BLK_ENTRIES)
-
-/*
- * The L2ARC device should be able to hold at least 1 full log block for its
- * contents to be restored (persistent L2ARC). This depends directly on the
- * number of entries per log block. The log block header and each entry
- * have a size of 128 bytes. Thus the lower the number of entries in a log
- * block, the higher the overhead:
- *  	Log Entries 	Min size (GB) 	Overhead
- *	1023 		15.984375 	0.10%
- *	511 		7.984375 	0.20%
- *	255 		3.984375 	0.39%
- *	127 		1.984375 	0.79%
- *	63 		0.984375 	1.59%
- *	31 		0.484375 	3.23%
- *	15 		0.234375 	6.67%
- *	7 		0.109375 	14.29%
- *	3 		0.046875 	33.33%
- */
-#define	L2ARC_PERSIST_MIN_SIZE	(L2ARC_LOG_BLK_MAX_PAYLOAD_SIZE)
 
 /*
  * A log block of up to 1023 ARC buffer log entries, chained into the
@@ -298,9 +272,9 @@ typedef struct l2arc_log_blk_phys {
 	l2arc_log_blkptr_t	lb_prev_lbp;	/* pointer to prev log block */
 	uint64_t		lb_pad[9];	/* resv'd for future use */
 	/* Payload */
-	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_ENTRIES];
+	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;
-CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_MAX_SIZE);
 CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
     offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
 
@@ -786,7 +760,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_rebuild_psize;
 	/*
 	 * Number of L2ARC log blocks that were restored successfully. Each
-	 * log block holds L2ARC_LOG_BLK_ENTRIES buffers.
+	 * log block may hold up to L2ARC_LOG_BLK_MAX_ENTRIES buffers.
 	 */
 	kstat_named_t arcstat_l2_rebuild_log_blks;
 	kstat_named_t arcstat_memory_throttle_count;
