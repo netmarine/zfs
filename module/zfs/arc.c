@@ -8240,8 +8240,10 @@ l2arc_sublist_lock(int list_num)
 static inline uint64_t
 l2arc_log_blk_overhead(uint64_t write_sz)
 {
-	return (write_sz / SPA_MINBLOCKSIZE / (L2ARC_LOG_BLK_ENTRIES + 1) *
-	    L2ARC_LOG_BLK_SIZE);
+	uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
+
+	return ((blocks * sizeof (l2arc_log_ent_phys_t)) +
+	    (blocks * L2ARC_LOG_BLK_HEADER_LEN / L2ARC_LOG_BLK_ENTRIES));
 }
 
 /*
