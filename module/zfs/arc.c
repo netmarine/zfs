@@ -9488,7 +9488,7 @@ static void
 l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
     const l2arc_log_blk_phys_t *lb, uint64_t lb_psize)
 {
-	uint64_t	size = 0, psize = 0, ipsize = 0;
+	uint64_t	size = 0, psize = 0;
 	int		cksum_failed = 0, rebuild_bufs = 0;
 	zio_cksum_t	cksum;
 
@@ -9525,14 +9525,9 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 		 *
 		 * This also works when the restored bufs get evicted at any
 		 * point during the rebuild.
-		 * vdev_space_update() has to be called before
-		 * l2arc_hdr_restore(), to avoid underflow since the latter
-		 * may call the former under arc_hdr_destroy().
 		 */
 		size += BLKPROP_GET_LSIZE((&lb->lb_entries[i])->le_prop);
 		psize += BLKPROP_GET_PSIZE((&lb->lb_entries[i])->le_prop);
-		ipsize = BLKPROP_GET_PSIZE((&lb->lb_entries[i])->le_prop);
-		vdev_space_update(dev->l2ad_vdev, ipsize, 0, 0);
 		l2arc_hdr_restore(&lb->lb_entries[i], dev, load_guid);
 	}
 
@@ -9579,6 +9574,12 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	    BLKPROP_GET_PROTECTED((le)->le_prop),
 	    BLKPROP_GET_PREFETCH((le)->le_prop));
 	asize = arc_hdr_size(hdr);
+
+	/*
+	 * vdev_space_update() has to be called before arc_hdr_destroy() to
+	 * avoid underflow since the latter also calls the former.
+	 */
+	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
 	ARCSTAT_INCR(arcstat_l2_psize, asize);
