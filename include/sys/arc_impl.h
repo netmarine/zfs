@@ -220,8 +220,9 @@ typedef struct l2arc_dev_hdr_phys {
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
+	uint32_t		dh_log_ent;	/* log entries per block */
 
-	const uint64_t	dh_pad[43];		/* pad to 512 bytes */
+	const uint32_t	dh_pad[85];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 

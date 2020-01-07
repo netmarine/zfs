@@ -9763,6 +9763,9 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio,
 	    dev->l2ad_log_blk_payload_asize / asize);
 
+	/* save the amount of log entries per block in the device header */
+	dev->l2ad_dev_hdr->dh_log_ent = dev->l2ad_log_ent_idx;
+
 	/* start a new log block */
 	dev->l2ad_log_ent_idx = 0;
 	dev->l2ad_log_blk_payload_asize = 0;
