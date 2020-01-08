@@ -8245,9 +8245,12 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 		return (0);
 	else {
 		uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
-		return ((blocks * sizeof (l2arc_log_ent_phys_t)) +
-		    (blocks * L2ARC_LOG_BLK_HEADER_LEN /
-		    dev->l2ad_dev_hdr->dh_log_blk_ent));
+		uint64_t log_blk_entries = blocks *
+		    sizeof (l2arc_log_ent_phys_t);
+		uint64_t log_blk_headers = blocks * L2ARC_LOG_BLK_HEADER_LEN /
+		    dev->l2ad_dev_hdr->dh_log_blk_ent;
+		return (vdev_psize_to_asize(dev->l2ad_vdev,
+		    log_blk_entries + log_blk_headers));
 	}
 }
 
