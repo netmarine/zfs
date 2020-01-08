@@ -909,10 +909,10 @@ static zio_t *l2arc_log_blk_fetch(vdev_t *vd,
 static void l2arc_log_blk_fetch_abort(zio_t *zio);
 
 /* L2ARC persistence block restoration routines. */
-static void l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
+static void l2arc_log_blk_restore(l2arc_dev_t *dev,
     const l2arc_log_blk_phys_t *lb, uint64_t lb_psize);
 static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
-    l2arc_dev_t *dev, uint64_t guid);
+    l2arc_dev_t *dev);
 
 /* L2ARC persistence write I/O routines. */
 static void l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
@@ -1695,8 +1695,8 @@ arc_buf_try_copy_decompressed_data(arc_buf_t *buf)
  * into being in the reverse order, i.e. l2arc->arc.
  */
 arc_buf_hdr_t *
-arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
-    l2arc_dev_t *dev, dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
+arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
+    dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
     enum zio_compress compress, boolean_t protected, boolean_t prefetch)
 {
 	arc_buf_hdr_t	*hdr;
@@ -1714,7 +1714,7 @@ arc_buf_alloc_l2only(uint64_t load_guid, size_t size, arc_buf_contents_t type,
 		arc_hdr_set_flags(hdr, ARC_FLAG_PROTECTED);
 	if (prefetch)
 		arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
-	hdr->b_spa = load_guid;
+	hdr->b_spa = spa_load_guid(dev->l2ad_vdev->vdev_spa);
 
 	hdr->b_dva = dva;	/* needs to go after arc_hdr_set_* calls */
 
@@ -9591,7 +9591,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	zio_t			*this_io = NULL, *next_io = NULL;
 	l2arc_log_blkptr_t	lb_ptrs[2];
 	boolean_t		first_pass, lock_held;
-	uint64_t		load_guid;
 
 	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
 	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
@@ -9607,8 +9606,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	 */
 	spa_config_enter(spa, SCL_L2ARC, vd, RW_READER);
 	lock_held = B_TRUE;
-
-	load_guid = spa_load_guid(dev->l2ad_vdev->vdev_spa);
 
 	/* Retrieve the persistent L2ARC device state */
 	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
@@ -9675,7 +9672,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * that the L2ARC write hand has not yet reached any of our
 		 * buffers.
 		 */
-		l2arc_log_blk_restore(dev, load_guid, this_lb,
+		l2arc_log_blk_restore(dev, this_lb,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
 
 		/* log blk restored, continue with next one in the list */
@@ -9910,8 +9907,8 @@ cleanup:
  * usage on the L2ARC vdev to make sure it tracks restored buffers.
  */
 static void
-l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
-    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize)
+l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
+    uint64_t lb_psize)
 {
 	uint64_t	size = 0, psize = 0;
 	int		cksum_failed = 0, rebuild_bufs = 0;
@@ -9954,7 +9951,7 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
 		 */
 		size += BLKPROP_GET_LSIZE((&lb->lb_entries[i])->le_prop);
 		psize += BLKPROP_GET_PSIZE((&lb->lb_entries[i])->le_prop);
-		l2arc_hdr_restore(&lb->lb_entries[i], dev, load_guid);
+		l2arc_hdr_restore(&lb->lb_entries[i], dev);
 	}
 
 	/*
@@ -9980,8 +9977,7 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, uint64_t load_guid,
  * into a state indicating that it has been evicted to L2ARC.
  */
 static void
-l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
-    uint64_t load_guid)
+l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 {
 	arc_buf_hdr_t		*hdr, *exists;
 	kmutex_t		*hash_lock;
@@ -9993,8 +9989,8 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	 * sleep if memory is full and we don't have to deal with failed
 	 * allocations.
 	 */
-	hdr = arc_buf_alloc_l2only(load_guid, BLKPROP_GET_LSIZE((le)->le_prop),
-	    type, dev, le->le_dva, le->le_daddr,
+	hdr = arc_buf_alloc_l2only(BLKPROP_GET_LSIZE((le)->le_prop), type,
+	    dev, le->le_dva, le->le_daddr,
 	    BLKPROP_GET_PSIZE((le)->le_prop), le->le_birth,
 	    BLKPROP_GET_COMPRESS((le)->le_prop),
 	    BLKPROP_GET_PROTECTED((le)->le_prop),
