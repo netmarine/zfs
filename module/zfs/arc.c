@@ -9367,7 +9367,20 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	if (log_entries > L2ARC_LOG_BLK_MAX_ENTRIES)
 		log_entries = L2ARC_LOG_BLK_MAX_ENTRIES;
 
-	hdr->dh_log_blk_ent = log_entries;
+	/*
+	 * Read the device header, and if hdr->dh_log_blk_ent is not equal to
+	 * the calculated one do not rebuild L2ARC.
+	 */
+	if (l2arc_dev_hdr_read(adddev) != 0) {
+		/* device header corrupted, start a new one */
+		bzero(adddev->l2ad_dev_hdr, adddev->l2ad_dev_hdr_asize);
+		rebuild = B_FALSE;
+	}
+
+	if (hdr->dh_log_blk_ent != log_entries) {
+		hdr->dh_log_blk_ent = log_entries;
+		rebuild = B_FALSE;
+	}
 
 	/*
 	 * Add device to global list
@@ -9375,7 +9388,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	mutex_enter(&l2arc_dev_mtx);
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
-	if (rebuild && l2arc_rebuild_enabled && log_entries > 0) {
+	if (rebuild && l2arc_rebuild_enabled && hdr->dh_log_blk_ent > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
@@ -9596,14 +9609,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	load_guid = spa_load_guid(dev->l2ad_vdev->vdev_spa);
-	/*
-	 * Device header processing phase.
-	 */
-	if ((err = l2arc_dev_hdr_read(dev)) != 0) {
-		/* device header corrupted, start a new one */
-		bzero(dev->l2ad_dev_hdr, dev->l2ad_dev_hdr_asize);
-		goto out;
-	}
 
 	/* Retrieve the persistent L2ARC device state */
 	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
