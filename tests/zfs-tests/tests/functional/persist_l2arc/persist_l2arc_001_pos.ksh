@@ -58,6 +58,8 @@ log_must set_tunable32 l2arc_noprefetch 0
 log_must zpool create $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
 
+log_must zpool set autotrim=on $TESTPOOL
+
 log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
 	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
 	--directory="/$TESTPOOL"

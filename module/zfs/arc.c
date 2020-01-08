@@ -8613,9 +8613,11 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 		return (0);
 	else {
 		uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
-		return ((blocks * sizeof (l2arc_log_ent_phys_t)) +
-		    (blocks * L2ARC_LOG_BLK_HEADER_LEN /
-		    dev->l2ad_dev_hdr->dh_log_blk_ent));
+		uint64_t log_blk_entries = blocks * sizeof (l2arc_log_ent_phys_t);
+		uint64_t log_blk_headers = blocks * L2ARC_LOG_BLK_HEADER_LEN /
+		    dev->l2ad_dev_hdr->dh_log_blk_ent;
+		return (vdev_psize_to_asize(dev->l2ad_vdev,
+		    log_blk_entries + log_blk_headers));
 	}
 }
 
@@ -9327,7 +9329,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
-	vd->vdev_trim_last_offset = 0;
+	vd->vdev_trim_last_offset = adddev->l2ad_start;
 	hdr = adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
 	    KM_SLEEP);
 
@@ -10393,7 +10395,7 @@ MODULE_PARM_DESC(zfs_arc_lotsfree_percent,
 	"System free memory I/O throttle in bytes");
 
 module_param(l2arc_rebuild_enabled, int, 0644);
-MODULE_PARAM_DESC(l2arc_rebuild_enabled,
+MODULE_PARM_DESC(l2arc_rebuild_enabled,
 	"Rebuild the L2ARC when importing a pool");
 
 module_param(zfs_arc_sys_free, ulong, 0644);
