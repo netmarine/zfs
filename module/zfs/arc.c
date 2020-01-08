@@ -8616,9 +8616,11 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 		return (0);
 	else {
 		uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
-		return ((blocks * sizeof (l2arc_log_ent_phys_t)) +
-		    (blocks * L2ARC_LOG_BLK_HEADER_LEN /
-		    dev->l2ad_dev_hdr->dh_log_blk_ent));
+		uint64_t log_blk_entries = blocks * sizeof (l2arc_log_ent_phys_t);
+		uint64_t log_blk_headers = blocks * L2ARC_LOG_BLK_HEADER_LEN /
+		    dev->l2ad_dev_hdr->dh_log_blk_ent;
+		return (vdev_psize_to_asize(dev->l2ad_vdev,
+		    log_blk_entries + log_blk_headers));
 	}
 }
 
@@ -10439,7 +10441,7 @@ module_param_call(zfs_arc_sys_free, param_set_arc_long, param_get_long,
 MODULE_PARM_DESC(zfs_arc_sys_free, "System free memory target size in bytes");
 
 module_param(l2arc_rebuild_enabled, int, 0644);
-MODULE_PARAM_DESC(l2arc_rebuild_enabled,
+MODULE_PARM_DESC(l2arc_rebuild_enabled,
 	"Rebuild the L2ARC when importing a pool");
 
 module_param_call(zfs_arc_dnode_limit, param_set_arc_long, param_get_long,
