@@ -8970,7 +8970,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	    sizeof (l2arc_log_ent_phys_t)) + L2ARC_LOG_BLK_HEADER_LEN) >=
 	    SPA_MINBLOCKSIZE);
 
-	uint32_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
+	uint16_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
 	    SPA_MAXBLOCKSHIFT) - 1;
 
 	if (log_entries > L2ARC_LOG_BLK_MAX_ENTRIES)
