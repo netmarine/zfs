@@ -1715,7 +1715,7 @@ arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
 		arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 	hdr->b_spa = spa_load_guid(dev->l2ad_vdev->vdev_spa);
 
-	hdr->b_dva = dva;	/* needs to go after arc_hdr_set_* calls */
+	hdr->b_dva = dva;
 
 	hdr->b_l2hdr.b_dev = dev;
 	hdr->b_l2hdr.b_daddr = daddr;
@@ -7977,7 +7977,7 @@ arc_fini(void)
  *    time we write a new log block, so that we're able to locate it in the
  *    L2ARC device. If this write results in an inconsistent device header
  *    (e.g. due to power failure), we detect this by verifying the header's
- *    checksum and simply drop the entries from L2ARC.
+ *    checksum and simply fail to reconstruct the L2ARC after reboot.
  *
  * Implementation diagram:
  *
@@ -7994,7 +7994,7 @@ arc_fini(void)
  *
  * As can be seen on the diagram, rather than using a simple linked list,
  * we use a pair of linked lists with alternating elements. This is a
- * performance enhancement due to the fact that we only find out of the
+ * performance enhancement due to the fact that we only find out the
  * address of the next log block access once the current block has been
  * completely read in. Obviously, this hurts performance, because we'd be
  * keeping the device's I/O queue at only a 1 operation deep, thus
@@ -8608,10 +8608,9 @@ l2arc_sublist_lock(int list_num)
 static inline uint64_t
 l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 {
-
-	if (dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
+	if (dev->l2ad_dev_hdr->dh_log_blk_ent == 0) {
 		return (0);
-	else {
+	} else {
 		uint64_t blocks = write_sz >> SPA_MINBLOCKSHIFT;
 		uint64_t log_blk_entries = blocks * sizeof (l2arc_log_ent_phys_t);
 		uint64_t log_blk_headers = blocks * L2ARC_LOG_BLK_HEADER_LEN /
@@ -9358,7 +9357,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	    sizeof (l2arc_log_ent_phys_t)) + L2ARC_LOG_BLK_HEADER_LEN) >=
 	    SPA_MINBLOCKSIZE);
 
-	uint32_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
+	uint64_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
 	    SPA_MAXBLOCKSHIFT) - 1;
 
 	if (log_entries > L2ARC_LOG_BLK_MAX_ENTRIES)
@@ -9539,7 +9538,7 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			    0, &p0, TS_RUN,
 			    minclsyspri);
 #else
-			(void) l2arc_dev_rebuild_start;
+			(void) l2arc_dev_rebuild_start(dev);
 #endif
 		}
 	}
@@ -10099,8 +10098,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
  * buffer to be written. This is then released in l2arc_write_done.
  */
 static void
-l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
-    l2arc_write_callback_t *cb)
+l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 {
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
 	uint64_t		psize, asize;
