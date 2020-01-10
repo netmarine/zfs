@@ -206,7 +206,7 @@ typedef struct l2arc_log_blkptr {
 typedef struct l2arc_dev_hdr_phys {
 	uint64_t	dh_magic;	/* L2ARC_DEV_HDR_MAGIC */
 	uint64_t	dh_version;	/* Persistent L2ARC version */
-	zio_cksum_t	dh_self_cksum;	/* fletcher4 of fields below */
+	zio_cksum_t	dh_self_cksum;  /* fletcher4 of fields below */
 
 	/*
 	 * Global L2ARC device state and metadata.
@@ -220,9 +220,8 @@ typedef struct l2arc_dev_hdr_phys {
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	uint16_t		dh_log_blk_ent;	/* entries per log blk */
-
-	const uint16_t		dh_pad[171];		/* pad to 512 bytes */
+	uint64_t		dh_log_blk_ent;	/* entries per log blk */
+	const uint64_t		dh_pad[42];	/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 
@@ -245,7 +244,7 @@ typedef struct l2arc_log_ent_phys {
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
 	zio_cksum_t		le_cksum;	/* checksum of log entry */
-	const uint32_t		le_pad[14];	/* pad to 128 bytes	 */
+	const uint64_t		le_pad[7];	/* pad to 128 bytes	 */
 } l2arc_log_ent_phys_t;
 
 #define	L2ARC_LOG_BLK_MAX_SIZE			(128 * 1024)	/* 128k */
