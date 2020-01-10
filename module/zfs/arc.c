@@ -534,7 +534,7 @@ arc_stats_t arc_stats = {
 	{ "l2_rebuild_success",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
-	{ "l2_rebuild_cksum_dh_errors",	KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_dh_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_cksum_lb_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_cksum_le_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_lowmem",		KSTAT_DATA_UINT64 },
@@ -901,8 +901,6 @@ static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 /* L2ARC persistence auxilliary routines. */
 static boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *lp);
-static void l2arc_dev_hdr_checksum(const l2arc_dev_hdr_phys_t *hdr,
-    zio_cksum_t *cksum);
 static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
     const arc_buf_hdr_t *ab);
 static inline boolean_t l2arc_range_check_overlap(uint64_t bottom,
@@ -9345,7 +9343,6 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 {
 	int			err;
 	uint64_t		guid;
-	zio_cksum_t		cksum;
 	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
 	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
 	abd_t *abd;
@@ -9356,15 +9353,16 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	err = zio_wait(zio_read_phys(NULL, dev->l2ad_vdev,
 	    VDEV_LABEL_START_SIZE, hdr_asize, abd,
-	    ZIO_CHECKSUM_OFF, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
+	    ZIO_CHECKSUM_LABEL, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
-	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
+	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY |
+	    ZIO_FLAG_SPECULATIVE, B_FALSE));
 
 	if (abd != NULL)
 		abd_put(abd);
 
 	if (err != 0) {
-		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
+		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
 		return (err);
 	}
 
@@ -9380,12 +9378,6 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 		 */
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_unsupported);
 		return (SET_ERROR(ENOTSUP));
-	}
-
-	l2arc_dev_hdr_checksum(hdr, &cksum);
-	if (!ZIO_CHECKSUM_EQUAL(hdr->dh_self_cksum, cksum)) {
-		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_dh_errors);
-		return (SET_ERROR(EINVAL));
 	}
 
 	return (0);
@@ -9696,11 +9688,9 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	if (dev->l2ad_first)
 		hdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
 
-	/* checksum operation goes last */
-	l2arc_dev_hdr_checksum(hdr, &hdr->dh_self_cksum);
 	cb->l2wcb_abd = abd_get_from_buf(hdr, hdr_asize);
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, VDEV_LABEL_START_SIZE,
-	    hdr_asize, cb->l2wcb_abd, ZIO_CHECKSUM_OFF,
+	    hdr_asize, cb->l2wcb_abd, ZIO_CHECKSUM_LABEL,
 	    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
 	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
 	(void) zio_nowait(wzio);
@@ -9816,18 +9806,6 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 */
 	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
 	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t));
-}
-
-/*
- * Computes the checksum of `hdr' and stores it in `cksum'.
- */
-static void
-l2arc_dev_hdr_checksum(const l2arc_dev_hdr_phys_t *hdr, zio_cksum_t *cksum)
-{
-	fletcher_4_native((uint8_t *)hdr +
-	    offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
-	    sizeof (*hdr) - offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
-	    NULL, cksum);
 }
 
 /*

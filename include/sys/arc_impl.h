@@ -206,7 +206,6 @@ typedef struct l2arc_log_blkptr {
 typedef struct l2arc_dev_hdr_phys {
 	uint64_t	dh_magic;	/* L2ARC_DEV_HDR_MAGIC */
 	uint64_t	dh_version;	/* Persistent L2ARC version */
-	zio_cksum_t	dh_self_cksum;  /* fletcher4 of fields below */
 
 	/*
 	 * Global L2ARC device state and metadata.
@@ -221,7 +220,8 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	const uint64_t		dh_pad[42];	/* pad to 512 bytes */
+	const uint64_t		dh_pad[41];	/* pad to 512 bytes */
+	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 
@@ -724,10 +724,10 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
 	/*
-	 * Number of times the L2ARC rebuild failed because the log block
-	 * pointers in the device header (dh_start_lbps) were corrupted.
+	 * Number of times the L2ARC rebuild failed because the device header
+	 * was invalid (either not initialized or corrupted or the IO failed).
 	 */
-	kstat_named_t arcstat_l2_rebuild_abort_cksum_dh_errors;
+	kstat_named_t arcstat_l2_rebuild_abort_dh_errors;
 	/*
 	 * Number of L2ARC log blocks which had none of their log entries
 	 * (buffers) restored in ARC due to checksum errors.
