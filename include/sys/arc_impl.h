@@ -247,11 +247,7 @@ typedef struct l2arc_log_ent_phys {
 	const uint64_t		le_pad[7];	/* pad to 128 bytes	 */
 } l2arc_log_ent_phys_t;
 
-#define	L2ARC_LOG_BLK_MAX_SIZE			(128 * 1024)	/* 128k */
-#define	L2ARC_LOG_BLK_HEADER_LEN		(128)
-#define	L2ARC_LOG_BLK_MAX_ENTRIES		/* 1023 entries */	\
-	((L2ARC_LOG_BLK_MAX_SIZE - L2ARC_LOG_BLK_HEADER_LEN) /		\
-	sizeof (l2arc_log_ent_phys_t))
+#define	L2ARC_LOG_BLK_MAX_ENTRIES	(1023)
 
 /*
  * A log block of up to 1023 ARC buffer log entries, chained into the
@@ -273,9 +269,8 @@ typedef struct l2arc_log_blk_phys {
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;
-CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_MAX_SIZE);
-CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
-    offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) >= SPA_MINBLOCKSIZE);
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) <= SPA_MAXBLOCKSIZE);
 
 /*
  * These structures hold in-flight abd buffers for log blocks as they're being
