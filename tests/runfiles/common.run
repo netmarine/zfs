@@ -882,5 +882,6 @@ post =
 tags = ['functional', 'log_spacemap']
 
 [tests/functional/persist_l2arc]
-tests = ['persist_l2arc_001_pos', 'persist_l2arc_002_pos', 'persist_l2arc_003_neg']
+tests = ['persist_l2arc_001_pos', 'persist_l2arc_002_pos',
+    'persist_l2arc_003_neg', 'persist_l2arc_004_pos', 'persist_l2arc_005_pos']
 tags = ['functional', 'persist_l2arc']
