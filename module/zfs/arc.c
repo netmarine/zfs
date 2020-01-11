@@ -8618,7 +8618,7 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 		    dev->l2ad_dev_hdr->dh_log_blk_ent;
 
 		return (vdev_psize_to_asize(dev->l2ad_vdev,
-		    L2ARC_LOG_BLK_MAX_SIZE) * log_blocks);
+		    sizeof (l2arc_log_blk_phys_t)) * log_blocks);
 	}
 }
 
@@ -9348,17 +9348,13 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	/*
 	 * The L2ARC has to hold at least the payload of one log block for
 	 * them to be restored (persistent L2ARC). The payload of a log block
-	 * depends on the amount of its log entries. The maximum amount of log
-	 * entries in a log block is set at 1023. Thus the maximum payload of
+	 * depends on the amount of its log entries. We always write log blocks
+	 * with 1023 entries. How many of them are committed or restored depends
+	 * on the size of the L2ARC device. Thus the maximum payload of
 	 * one log block is 1023 * SPA_MAXBLOCKSIZE = 16GB. If the L2ARC device
-	 * is less than that, reduce the amount of log entries per block so as
-	 * to enable persistence. The only limitation is that the size of the
-	 * log block has to be at least SPA_MINBLOCKSIZE bytes.
+	 * is less than that, we reduce the amount of committed and restored
+	 * log entries per block so as to enable persistence.
 	 */
-	CTASSERT_GLOBAL(((((SPA_MINDEVSIZE >> SPA_MAXBLOCKSHIFT) - 1) *
-	    sizeof (l2arc_log_ent_phys_t)) + L2ARC_LOG_BLK_HEADER_LEN) >=
-	    SPA_MINBLOCKSIZE);
-
 	uint64_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
 	    SPA_MAXBLOCKSHIFT) - 1;
 
