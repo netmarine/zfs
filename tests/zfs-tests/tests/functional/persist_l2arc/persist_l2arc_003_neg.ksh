@@ -61,7 +61,7 @@ log_must set_tunable32 l2arc_noprefetch 0
 typeset rebuild_enabled=$(get_tunable l2arc_rebuild_enabled)
 log_must set_tunable32 l2arc_rebuild_enabled 0
 
-log_must zpool create $TESTPOOL $VDEV \
+log_must zpool create -f $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
 
 log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
