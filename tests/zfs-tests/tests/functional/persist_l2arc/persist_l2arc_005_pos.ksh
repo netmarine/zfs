@@ -26,13 +26,13 @@
 
 #
 # DESCRIPTION:
-#	Persistent L2ARC with an encrypted ZFS file system succeeds.
+#	Persistent L2ARC restores all written log blocks with encryption
 #
 # STRATEGY:
 #	1. Create pool with a cache device.
 #	2. Create a an encrypted ZFS file system.
-#	3. Create a random file in the encyrpted file system and random
-#		read for 30 sec.
+#	3. Create a random file in the entrypted file system,
+#		smaller than the cache device, and random read for 30 sec.
 #	4. Export pool.
 #	5. Read amount of log blocks written.
 #	6. Import pool.
@@ -43,7 +43,7 @@
 
 verify_runnable "global"
 
-log_pass "Persistent L2ARC restores all written log blocks with encryption."
+log_assert "Persistent L2ARC restores all written log blocks with encryption."
 
 function cleanup
 {
@@ -61,6 +61,16 @@ log_must set_tunable32 l2arc_noprefetch 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
+export DIRECTORY=/$TESTPOOL
+export NUMJOBS=1
+export FILE_SIZE=${fill_mb}M
+export RANDSEED=abcd
+export COMPPERCENT=40
+export COMPCHUNK=512
+export RUNTIME=30
+export BLOCKSIZE=128K
+export SYNC_TYPE=0
+export DIRECT=1
 
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
@@ -70,19 +80,18 @@ log_must zpool create -f $TESTPOOL $VDEV \
 log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 	"-o keyformat=passphrase $TESTPOOL/$TESTFS1"
 
-log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=${fill_mb}M \
-	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
-	--directory="/$TESTPOOL/$TESTFS1"
+log_must fio $FIO_SCRIPTS/mkfiles.fio
+log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 
-log_blk_start=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
+typeset log_blk_start=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 
-log_blk_end=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
+typeset log_blk_end=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must test $log_blk_start -eq $log_blk_end
