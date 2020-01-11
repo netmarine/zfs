@@ -61,6 +61,11 @@ log_must set_tunable32 l2arc_noprefetch 0
 typeset rebuild_enabled=$(get_tunable l2arc_rebuild_enabled)
 log_must set_tunable32 l2arc_rebuild_enabled 0
 
+typeset fill_mb=800
+typeset cache_sz=$(( 2 * $fill_mb ))
+
+log_must truncate -s ${cache_sz}M $VDEV_CACHE
+
 log_must zpool create -f $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
 
@@ -82,5 +87,6 @@ l2_success_end=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
 log_mustnot test $l2_success_end -gt $l2_success_start
 
 log_must zpool destroy -f $TESTPOOL
+log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
 
 log_assert "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
