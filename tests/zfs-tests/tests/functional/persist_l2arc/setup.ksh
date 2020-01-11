@@ -27,6 +27,5 @@ verify_runnable "global"
 log_must rm -rf $VDIR
 log_must mkdir -p $VDIR
 log_must mkfile $SIZE $VDEV
-log_must truncate -s $LSIZE $VDEV_CACHE
 
 log_pass
