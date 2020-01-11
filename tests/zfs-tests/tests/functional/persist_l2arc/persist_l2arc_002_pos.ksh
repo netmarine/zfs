@@ -26,7 +26,7 @@
 
 #
 # DESCRIPTION:
-#	Persistent L2ARC with an encrypted ZFS file system succeeds.
+#	Persistent L2ARC with an encrypted ZFS file system succeeds
 #
 # STRATEGY:
 #	1. Create pool with a cache device.
@@ -61,6 +61,16 @@ log_must set_tunable32 l2arc_noprefetch 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( $fill_mb / 2 ))
+export DIRECTORY=/$TESTPOOL
+export NUMJOBS=1
+export FILE_SIZE=${fill_mb}M
+export RANDSEED=abcd
+export COMPPERCENT=40
+export COMPCHUNK=512
+export RUNTIME=30
+export BLOCKSIZE=128K
+export SYNC_TYPE=0
+export DIRECT=1
 
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
@@ -70,23 +80,21 @@ log_must zpool create -f $TESTPOOL $VDEV \
 log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 	"-o keyformat=passphrase $TESTPOOL/$TESTFS1"
 
-log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=${fill_mb}M \
-	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
-	--directory="/$TESTPOOL/$TESTFS1"
+log_must fio $FIO_SCRIPTS/mkfiles.fio
+log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
 
-l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
-log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
-	--readwrite=randread --runtime=10 --time_based --iodepth=64 \
-	--directory="/$TESTPOOL/$TESTFS1"
+export RUNTIME=10
+log_must fio $FIO_SCRIPTS/random_reads.fio
 
-l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must test $l2_hits_end -gt $l2_hits_start
