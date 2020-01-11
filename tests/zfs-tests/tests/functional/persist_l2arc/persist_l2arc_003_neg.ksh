@@ -63,25 +63,34 @@ log_must set_tunable32 l2arc_rebuild_enabled 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
+export DIRECTORY=/$TESTPOOL
+export NUMJOBS=1
+export FILE_SIZE=${fill_mb}M
+export RANDSEED=abcd
+export COMPPERCENT=40
+export COMPCHUNK=512
+export RUNTIME=30
+export BLOCKSIZE=128K
+export SYNC_TYPE=0
+export DIRECT=1
 
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 log_must zpool create -f $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
 
-log_must fio --ioengine=libaio --direct=1 --name=test --bs=2M --size=800M \
-	--readwrite=randread --runtime=30 --time_based --iodepth=64 \
-	--directory="/$TESTPOOL"
+log_must fio $FIO_SCRIPTS/mkfiles.fio
+log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 
-l2_success_start=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
+typeset l2_success_start=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must zpool import -d $VDIR $TESTPOOL
 log_mustnot test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
 
-l2_success_end=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
+typeset l2_success_end=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_mustnot test $l2_success_end -gt $l2_success_start
@@ -89,4 +98,4 @@ log_mustnot test $l2_success_end -gt $l2_success_start
 log_must zpool destroy -f $TESTPOOL
 log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
 
-log_assert "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
+log_pass "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
