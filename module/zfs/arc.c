@@ -902,10 +902,9 @@ static int l2arc_dev_hdr_read(l2arc_dev_t *dev);
 static int l2arc_log_blk_read(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *this_lp, const l2arc_log_blkptr_t *next_lp,
     l2arc_log_blk_phys_t *this_lb, l2arc_log_blk_phys_t *next_lb,
-    uint8_t *this_lb_buf, uint8_t *next_lb_buf,
     zio_t *this_io, zio_t **next_io);
 static zio_t *l2arc_log_blk_fetch(vdev_t *vd,
-    const l2arc_log_blkptr_t *lp, uint8_t *lb_buf);
+    const l2arc_log_blkptr_t *lp, l2arc_log_blk_phys_t *lb);
 static void l2arc_log_blk_fetch_abort(zio_t *zio);
 
 /* L2ARC persistence block restoration routines. */
@@ -9586,15 +9585,12 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	spa_t			*spa = vd->vdev_spa;
 	int			err;
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
-	uint8_t			*this_lb_buf, *next_lb_buf;
 	zio_t			*this_io = NULL, *next_io = NULL;
 	l2arc_log_blkptr_t	lb_ptrs[2];
 	boolean_t		first_pass, lock_held;
 
 	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
 	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
-	this_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
-	next_lb_buf = vmem_zalloc(sizeof (l2arc_log_blk_phys_t), KM_SLEEP);
 
 	/*
 	 * We prevent device removal while issuing reads to the device,
@@ -9641,8 +9637,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		}
 
 		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
-		    this_lb, next_lb, this_lb_buf, next_lb_buf,
-		    this_io, &next_io)) != 0)
+		    this_lb, next_lb, this_io, &next_io)) != 0)
 			break;
 
 		spa_config_exit(spa, SCL_L2ARC, vd);
@@ -9678,7 +9673,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		lb_ptrs[0] = lb_ptrs[1];
 		lb_ptrs[1] = this_lb->lb_prev_lbp;
 		PTR_SWAP(this_lb, next_lb);
-		PTR_SWAP(this_lb_buf, next_lb_buf);
 		this_io = next_io;
 		next_io = NULL;
 		first_pass = B_FALSE;
@@ -9712,8 +9706,6 @@ out:
 		l2arc_log_blk_fetch_abort(next_io);
 	vmem_free(this_lb, sizeof (*this_lb));
 	vmem_free(next_lb, sizeof (*next_lb));
-	vmem_free(this_lb_buf, sizeof (l2arc_log_blk_phys_t));
-	vmem_free(next_lb_buf, sizeof (l2arc_log_blk_phys_t));
 	if (err == 0)
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
 
@@ -9782,10 +9774,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
  *
  * The arguments this_lp and next_lp point to the current and next log blk
  * address in the block chain. Similarly, this_lb and next_lb hold the
- * l2arc_log_blk_phys_t's of the current and next L2ARC blk. The this_lb_buf
- * and next_lb_buf must be buffers of appropriate to hold a raw
- * l2arc_log_blk_phys_t (they are used as catch buffers for read ops prior
- * to buffer decompression).
+ * l2arc_log_blk_phys_t's of the current and next L2ARC blk.
  *
  * The `this_io' and `next_io' arguments are used for block fetching.
  * When issuing the first blk IO during rebuild, you should pass NULL for
@@ -9806,7 +9795,6 @@ static int
 l2arc_log_blk_read(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *this_lbp, const l2arc_log_blkptr_t *next_lbp,
     l2arc_log_blk_phys_t *this_lb, l2arc_log_blk_phys_t *next_lb,
-    uint8_t *this_lb_buf, uint8_t *next_lb_buf,
     zio_t *this_io, zio_t **next_io)
 {
 	int		err = 0;
@@ -9815,7 +9803,6 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 
 	ASSERT(this_lbp != NULL && next_lbp != NULL);
 	ASSERT(this_lb != NULL && next_lb != NULL);
-	ASSERT(this_lb_buf != NULL && next_lb_buf != NULL);
 	ASSERT(next_io != NULL && *next_io == NULL);
 	ASSERT(l2arc_log_blkptr_valid(dev, this_lbp));
 
@@ -9825,7 +9812,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	 */
 	if (this_io == NULL) {
 		this_io = l2arc_log_blk_fetch(dev->l2ad_vdev, this_lbp,
-		    this_lb_buf);
+		    this_lb);
 	}
 
 	/*
@@ -9838,7 +9825,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 		 * decompress and restore this log blk.
 		 */
 		*next_io = l2arc_log_blk_fetch(dev->l2ad_vdev, next_lbp,
-		    next_lb_buf);
+		    next_lb);
 	}
 
 	/* Wait for the IO to read this log block to complete */
@@ -9848,7 +9835,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	}
 
 	/* Make sure the buffer checks out */
-	fletcher_4_native(this_lb_buf,
+	fletcher_4_native(this_lb,
 	    BLKPROP_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
@@ -9859,10 +9846,11 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	/* Now we can take our time decoding this buffer */
 	switch (BLKPROP_GET_COMPRESS((this_lbp)->lbp_prop)) {
 	case ZIO_COMPRESS_OFF:
-		bcopy(this_lb_buf, this_lb, sizeof (*this_lb));
 		break;
 	case ZIO_COMPRESS_LZ4:
-		abd = abd_get_from_buf(this_lb_buf,
+		abd = abd_alloc_for_io(BLKPROP_GET_PSIZE((this_lbp)->lbp_prop),
+		    B_TRUE);
+		abd_copy_from_buf_off(abd, this_lb, 0,
 		    BLKPROP_GET_PSIZE((this_lbp)->lbp_prop));
 		if ((err = zio_decompress_data(
 		    BLKPROP_GET_COMPRESS((this_lbp)->lbp_prop),
@@ -9889,7 +9877,7 @@ cleanup:
 		*next_io = NULL;
 	}
 	if (abd != NULL)
-		abd_put(abd);
+		abd_free(abd);
 	return (err);
 }
 
@@ -10027,7 +10015,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
  */
 static zio_t *
 l2arc_log_blk_fetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
-    uint8_t *lb_buf)
+    l2arc_log_blk_phys_t *lb)
 {
 	uint32_t		psize;
 	zio_t			*pio;
@@ -10036,7 +10024,7 @@ l2arc_log_blk_fetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
 	psize = BLKPROP_GET_PSIZE((lbp)->lbp_prop);
 	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
 	cb = kmem_alloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
-	cb->l2rcb_abd = abd_get_from_buf(lb_buf, psize);
+	cb->l2rcb_abd = abd_get_from_buf(lb, psize);
 	pio = zio_root(vd->vdev_spa, l2arc_blk_fetch_done, cb,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
 	    ZIO_FLAG_DONT_RETRY);
