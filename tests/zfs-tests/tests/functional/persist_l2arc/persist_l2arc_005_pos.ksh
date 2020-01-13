@@ -62,9 +62,9 @@ log_must set_tunable32 l2arc_noprefetch 0
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
 export DIRECTORY=/$TESTPOOL
-export NUMJOBS=1
 export FILE_SIZE=${fill_mb}M
-export RANDSEED=abcd
+export NUMJOBS=1
+export RANDSEED=1234
 export COMPPERCENT=40
 export COMPCHUNK=512
 export RUNTIME=30

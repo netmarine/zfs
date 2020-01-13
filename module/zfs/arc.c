@@ -8966,11 +8966,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * is less than that, we reduce the amount of committed and restored
 	 * log entries per block so as to enable persistence.
 	 */
-	uint64_t log_entries = ((adddev->l2ad_end - adddev->l2ad_start) >>
-	    SPA_MAXBLOCKSHIFT) - 1;
-
-	if (log_entries > L2ARC_LOG_BLK_MAX_ENTRIES)
-		log_entries = L2ARC_LOG_BLK_MAX_ENTRIES;
+	uint64_t log_entries = MIN((adddev->l2ad_end - adddev->l2ad_start) >>
+	    SPA_MAXBLOCKSHIFT, L2ARC_LOG_BLK_MAX_ENTRIES);
 
 	/*
 	 * Read the device header, and if hdr->dh_log_blk_ent is not equal to
