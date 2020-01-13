@@ -266,7 +266,7 @@ typedef struct l2arc_log_blk_phys {
 	uint64_t		lb_pad[9];	/* resv'd for future use */
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
-} l2arc_log_blk_phys_t;
+} l2arc_log_blk_phys_t;				/* 128K total */
 CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) >= SPA_MINBLOCKSIZE);
 CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) <= SPA_MAXBLOCKSIZE);
 

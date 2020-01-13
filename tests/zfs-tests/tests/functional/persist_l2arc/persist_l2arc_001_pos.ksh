@@ -32,9 +32,20 @@
 #	2. Create a random file in that pool and random read for 30 sec.
 #	3. Export pool.
 #	4. Import pool.
-#	5. Check in zpool iostat if the cache device has space allocated.
+#	5. Check in zpool iostat if the cache device has space* allocated.
 #	6. Read the file written in (2) and check if l2_hits in
 #		/proc/spl/kstat/zfs/arcstats increased.
+#
+#	* We can predict the minimum bytes of L2ARC restored if we subtract
+#	from the effective size of the cache device the bytes l2arc_evict()
+#	evicts:
+#	l2: L2ARC device size - VDEV_LABEL_START_SIZE - l2ad_dev_hdr_asize
+#	wr_sz: l2arc_write_max + l2arc_write_boost (worst case)
+#	blk_overhead: wr_sz / SPA_MINBLOCKSHIFT / (l2 / SPA_MAXBLOCKSHIFT) *
+#		sizeof (l2arc_log_blk_phys_t)
+#	min restored size: l2 - 2 * (wr_sz + blk_overhead)
+#				^
+#				when l2ad_hand approaches l2ad_end
 #
 
 verify_runnable "global"
@@ -56,11 +67,11 @@ typeset noprefetch=$(get_tunable l2arc_noprefetch)
 log_must set_tunable32 l2arc_noprefetch 0
 
 typeset fill_mb=800
-typeset cache_sz=$(( $fill_mb / 2 ))
+typeset cache_sz=$(( floor($fill_mb / 2 ) ))
 export DIRECTORY=/$TESTPOOL
-export NUMJOBS=1
 export FILE_SIZE=${fill_mb}M
-export RANDSEED=abcd
+export NUMJOBS=1
+export RANDSEED=1234
 export COMPPERCENT=40
 export COMPCHUNK=512
 export RUNTIME=30
@@ -81,7 +92,7 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL
 
-log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 80000000
+log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 23702188
 
 typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
