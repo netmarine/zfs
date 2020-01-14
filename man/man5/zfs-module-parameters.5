@@ -259,6 +259,20 @@ Use \fB1\fR for yes (default) and \fB0\fR for no.
 .sp
 .ne 2
 .na
+\fBl2arc_rebuild_blocks_min_size\fR (int)
+.ad
+.RS 12n
+Min size in bytes of an L2ARC device to write rebuild log blocks in it.
+Rationale: for L2ARC devices less than 1GB, the amount of data l2arc_evict()
+evicts is significant compared to the amount of restored L2ARC data. In this
+case do not write or restore log blocks in L2ARC in order not to waste space.
+.sp
+Default value: \fB1,073,741,824\fR (1GB).
+.RE
+
+.sp
+.ne 2
+.na
 \fBmetaslab_aliquot\fR (ulong)
 .ad
 .RS 12n

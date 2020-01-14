@@ -59,12 +59,16 @@ function cleanup
 	fi
 
 	log_must set_tunable32 l2arc_noprefetch $noprefetch
+	log_must set_tunable32 l2arc_rebuild_blocks_min_size \
+		$rebuild_blocks_min_size
 }
 log_onexit cleanup
 
 # l2arc_noprefetch is set to 0 to let L2ARC handle prefetches
 typeset noprefetch=$(get_tunable l2arc_noprefetch)
+typeset rebuild_blocks_min_size=$(get_tunable l2arc_rebuild_blocks_min_size)
 log_must set_tunable32 l2arc_noprefetch 0
+log_must set_tunable32 l2arc_rebuild_blocks_min_size 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( floor($fill_mb / 2 ) ))
@@ -90,7 +94,8 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL
 
-log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" -gt 23702188
+log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" \
+	-gt 23702188
 
 typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')

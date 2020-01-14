@@ -865,11 +865,18 @@ static void l2arc_read_done(zio_t *);
 /*
  * Performance tuning of L2ARC persistence:
  *
- * l2arc_rebuild_enabled : A ZFS module that controls whether adding an L2ARC
- * 		device (either at pool import or when adding one manually later)
- * 		will attempt to rebuild L2ARC buffer contents.
+ * l2arc_rebuild_enabled : A ZFS module parameter that controls whether adding
+ * 		an L2ARC device (either at pool import or later) will attempt
+ * 		to rebuild L2ARC buffer contents.
+ * l2arc_rebuild_blocks_min_size : A ZFS module parameter that controls whether
+ * 		log blocks are written to the L2ARC device. If the L2ARC device
+ * 		is less than 1GB, the amount of data l2arc_evict() evicts is
+ * 		significant compared to the amount of restored L2ARC data. In
+ * 		this case do not write or restore log blocks in L2ARC so as not
+ * 		to waste space.
  */
 int l2arc_rebuild_enabled = B_TRUE;
+int l2arc_rebuild_blocks_min_size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
@@ -8761,9 +8768,10 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 	/*
 	 * If we wrote any logs as part of this write, update dev hdr
-	 * to point to it.
+	 * to point to it. If log_entries = 0 also update the header here,
+	 * otherwise it will not be updated, leading to dh_errors.
 	 */
-	if (dev_hdr_update)
+	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
 		l2arc_dev_hdr_update(dev, pio, cb);
 
 	/*
@@ -8921,8 +8929,9 @@ l2arc_vdev_get(vdev_t *vd)
 void
 l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
-	l2arc_dev_t *adddev;
-	l2arc_dev_hdr_phys_t *hdr;
+	l2arc_dev_t		*adddev;
+	l2arc_dev_hdr_phys_t	*hdr;
+	uint64_t		log_entries;
 
 	ASSERT(!l2arc_vdev_present(vd));
 
@@ -8966,8 +8975,13 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * is less than that, we reduce the amount of committed and restored
 	 * log entries per block so as to enable persistence.
 	 */
-	uint64_t log_entries = MIN((adddev->l2ad_end - adddev->l2ad_start) >>
-	    SPA_MAXBLOCKSHIFT, L2ARC_LOG_BLK_MAX_ENTRIES);
+	if (adddev->l2ad_end < l2arc_rebuild_blocks_min_size) {
+		log_entries = 0;
+	} else {
+		log_entries = MIN((adddev->l2ad_end -
+		    adddev->l2ad_start) >> SPA_MAXBLOCKSHIFT,
+		    L2ARC_LOG_BLK_MAX_ENTRIES);
+	}
 
 	/*
 	 * Read the device header, and if hdr->dh_log_blk_ent is not equal to
@@ -9963,6 +9977,9 @@ ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, norw, INT, ZMOD_RW,
 
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, rebuild_enabled, INT, ZMOD_RW,
 	"Rebuild the L2ARC when importing a pool");
+
+ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, rebuild_blocks_min_size, INT, ZMOD_RW,
+	"Min size in bytes to write rebuild log blocks in L2ARC");
 
 ZFS_MODULE_PARAM_CALL(zfs_arc, zfs_arc_, lotsfree_percent, param_set_arc_int,
 	param_get_int, ZMOD_RW, "System free memory I/O throttle in bytes");
