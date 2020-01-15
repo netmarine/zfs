@@ -8906,17 +8906,14 @@ static l2arc_dev_t *
 l2arc_vdev_get(vdev_t *vd)
 {
 	l2arc_dev_t	*dev;
-	boolean_t	held = MUTEX_HELD(&l2arc_dev_mtx);
 
-	if (!held)
-		mutex_enter(&l2arc_dev_mtx);
+	mutex_enter(&l2arc_dev_mtx);
 	for (dev = list_head(l2arc_dev_list); dev != NULL;
 	    dev = list_next(l2arc_dev_list, dev)) {
 		if (dev->l2ad_vdev == vd)
 			break;
 	}
-	if (!held)
-		mutex_exit(&l2arc_dev_mtx);
+	mutex_exit(&l2arc_dev_mtx);
 
 	return (dev);
 }
@@ -9027,9 +9024,9 @@ l2arc_remove_vdev(vdev_t *vd)
 	/*
 	 * Find the device by vdev
 	 */
-	mutex_enter(&l2arc_dev_mtx);
 	remdev = l2arc_vdev_get(vd);
 	ASSERT3P(remdev, !=, NULL);
+	mutex_enter(&l2arc_dev_mtx);
 
 	/*
 	 * Cancel any ongoing or scheduled rebuild (race protection with
@@ -9143,7 +9140,6 @@ l2arc_spa_rebuild_start(spa_t *spa)
 	/*
 	 * Locate the spa's l2arc devices and kick off rebuild threads.
 	 */
-	mutex_enter(&l2arc_dev_mtx);
 	for (int i = 0; i < spa->spa_l2cache.sav_count; i++) {
 		l2arc_dev_t *dev =
 		    l2arc_vdev_get(spa->spa_l2cache.sav_vdevs[i]);
@@ -9152,6 +9148,7 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			continue;
 		}
 		if (dev->l2ad_rebuild && !dev->l2ad_rebuild_cancel) {
+			mutex_enter(&l2arc_dev_mtx);
 #ifdef	_KERNEL
 			(void) thread_create(NULL, 0,
 			    (void (*)(void *))l2arc_dev_rebuild_start, dev,
@@ -9160,9 +9157,9 @@ l2arc_spa_rebuild_start(spa_t *spa)
 #else
 			(void) l2arc_dev_rebuild_start(dev);
 #endif
+			mutex_exit(&l2arc_dev_mtx);
 		}
 	}
-	mutex_exit(&l2arc_dev_mtx);
 }
 
 /*
