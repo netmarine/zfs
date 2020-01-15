@@ -9510,11 +9510,11 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
     uint64_t lb_psize)
 {
 	uint64_t	size = 0, psize = 0;
+	uint64_t	log_entries = dev->l2ad_dev_hdr->dh_log_blk_ent;
 	int		cksum_failed = 0, rebuild_bufs = 0;
 	zio_cksum_t	cksum;
-	uint16_t	dh_log_entries = dev->l2ad_dev_hdr->dh_log_blk_ent;
 
-	for (int i = dh_log_entries - 1; i >= 0; i--) {
+	for (int i = log_entries - 1; i >= 0; i--) {
 		/*
 		 * Check the checksum of the log entry.
 		 */
@@ -9560,7 +9560,7 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 	 *	bufs		# of ARC buffer headers restored
 	 *	log_blks	# of L2ARC log entries processed during restore
 	 */
-	rebuild_bufs = dh_log_entries - cksum_failed;
+	rebuild_bufs = log_entries - cksum_failed;
 	ARCSTAT_INCR(arcstat_l2_rebuild_size, size);
 	ARCSTAT_INCR(arcstat_l2_rebuild_psize, psize);
 	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, rebuild_bufs);
