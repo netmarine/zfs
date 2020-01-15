@@ -8154,10 +8154,10 @@ l2arc_dev_get_next(void)
 		else if (next == first)
 			break;
 
-	} while (vdev_is_dead(next->l2ad_vdev) && !next->l2ad_rebuild);
+	} while (vdev_is_dead(next->l2ad_vdev) && next->l2ad_rebuild);
 
 	/* if we were unable to find any usable vdevs, return NULL */
-	if (vdev_is_dead(next->l2ad_vdev))
+	if (vdev_is_dead(next->l2ad_vdev) || next->l2ad_rebuild)
 		next = NULL;
 
 	l2arc_dev_last = next;
