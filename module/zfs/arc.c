@@ -9376,9 +9376,10 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * Read the device header, and if hdr->dh_log_blk_ent is not equal to
 	 * the calculated one do not rebuild L2ARC.
 	 */
+	mutex_enter(&l2arc_dev_mtx);
 	if (l2arc_dev_hdr_read(adddev) != 0) {
 		/* device header corrupted, start a new one */
-		bzero(adddev->l2ad_dev_hdr, adddev->l2ad_dev_hdr_asize);
+		bzero(hdr, adddev->l2ad_dev_hdr_asize);
 		rebuild = B_FALSE;
 	}
 
@@ -9390,7 +9391,6 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	/*
 	 * Add device to global list
 	 */
-	mutex_enter(&l2arc_dev_mtx);
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
 	if (rebuild && l2arc_rebuild_enabled && hdr->dh_log_blk_ent > 0) {
