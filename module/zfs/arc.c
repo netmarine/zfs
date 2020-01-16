@@ -9027,11 +9027,9 @@ l2arc_remove_vdev(vdev_t *vd)
 	 */
 	remdev = l2arc_vdev_get(vd);
 	ASSERT3P(remdev, !=, NULL);
-	mutex_enter(&l2arc_dev_mtx);
 
 	/*
-	 * Cancel any ongoing or scheduled rebuild (race protection with
-	 * l2arc_spa_rebuild_start provided via l2arc_dev_mtx).
+	 * Cancel any ongoing or scheduled rebuild.
 	 */
 	if (remdev->l2ad_rebuild_began == B_TRUE) {
 		remdev->l2ad_rebuild_cancel = B_TRUE;
@@ -9044,6 +9042,7 @@ l2arc_remove_vdev(vdev_t *vd)
 	/*
 	 * Remove device from global list
 	 */
+	mutex_enter(&l2arc_dev_mtx);
 	list_remove(l2arc_dev_list, remdev);
 	l2arc_dev_last = NULL;		/* may have been invalidated */
 	atomic_dec_64(&l2arc_ndev);
@@ -9149,16 +9148,9 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			continue;
 		}
 		if (dev->l2ad_rebuild && !dev->l2ad_rebuild_cancel) {
-			mutex_enter(&l2arc_dev_mtx);
-#ifdef	_KERNEL
 			(void) thread_create(NULL, 0,
-			    (void (*)(void *))l2arc_dev_rebuild_start, dev,
-			    0, &p0, TS_RUN,
-			    minclsyspri);
-#else
-			(void) l2arc_dev_rebuild_start(dev);
-#endif
-			mutex_exit(&l2arc_dev_mtx);
+			    (void (*)(void *))l2arc_dev_rebuild_start,
+			    dev, 0, &p0, TS_RUN, minclsyspri);
 		}
 	}
 }
