@@ -63,16 +63,7 @@ log_must set_tunable32 l2arc_rebuild_enabled 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
-export DIRECTORY=/$TESTPOOL
-export FILE_SIZE=${fill_mb}M
-export NUMJOBS=1
-export RANDSEED=1234
-export COMPPERCENT=40
-export COMPCHUNK=512
-export RUNTIME=30
-export BLOCKSIZE=128K
-export SYNC_TYPE=0
-export DIRECT=1
+export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
