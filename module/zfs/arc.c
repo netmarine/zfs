@@ -8693,19 +8693,18 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 		 */
 		if ((dev->l2ad_end - dev->l2ad_start) > (2 * distance)) {
 			/*
-			 * We save taddr in vdev_trim_last_offset if the trim
-			 * was successfull, and if it is greater or equal to
-			 * taddr in the next run, skip trimming.
+			 * We save taddr in vdev_trim_last_offset, and if it
+			 * is greater or equal to taddr in the next run, skip
+			 * trimming. Advance vdev_trim_last_offset even if the
+			 * trim failed, since l2arc_write_buffers() might write
+			 * here.
 			 */
 			if (vd->vdev_trim_last_offset < taddr) {
-				int err;
-				err = vdev_trim_simple(vd,
+				vdev_trim_simple(vd,
 				    vd->vdev_trim_last_offset,
 				    taddr - vd->vdev_trim_last_offset,
 				    TRIM_TYPE_AUTO);
-				if (err == 0) {
-					vd->vdev_trim_last_offset = taddr;
-				}
+				vd->vdev_trim_last_offset = taddr;
 			}
 		} else {
 			vdev_trim_simple(vd, dev->l2ad_hand,
@@ -9603,7 +9602,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
+	vd->vdev_trim_last_offset = dev->l2ad_hand =
+	    vdev_psize_to_asize(dev->l2ad_vdev,
 	    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr +
 	    BLKPROP_GET_PSIZE(
 	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop));
@@ -10176,14 +10176,26 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
 	uint64_t psize = BLKPROP_GET_PSIZE((lbp)->lbp_prop);
 	uint64_t end = lbp->lbp_daddr + psize;
+	boolean_t trimmed;
 
 	/*
 	 * A log block is valid if all of the following conditions are true:
 	 * - it fits entirely between l2ad_start and l2ad_end
 	 * - it has a valid size
+	 * - it was not trimmed by l2arc_evict()
 	 */
+	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * (l2arc_write_size() +
+		l2arc_log_blk_overhead(l2arc_write_size(), dev))))) {
+		trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
+		    dev->l2ad_end, lbp->lbp_daddr);
+	} else {
+		trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
+		    l2arc_log_blk_overhead(l2arc_write_size(), dev) +
+		    l2arc_write_size() + dev->l2ad_hand, lbp->lbp_daddr);
+	}
+
 	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
-	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t));
+	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) && !trimmed);
 }
 
 /*
