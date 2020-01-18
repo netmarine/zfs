@@ -8943,7 +8943,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_dev_hdr_asize = MAX(sizeof (*adddev->l2ad_dev_hdr),
 	    1 << vd->vdev_ashift);
 	adddev->l2ad_start = VDEV_LABEL_START_SIZE + adddev->l2ad_dev_hdr_asize;
-	adddev->l2ad_end = VDEV_LABEL_START_SIZE + vdev_get_min_asize(vd);
+	adddev->l2ad_end = vdev_get_min_asize(vd);
 	ASSERT3U(adddev->l2ad_start, <, adddev->l2ad_end);
 	adddev->l2ad_hand = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
@@ -9586,7 +9586,8 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	    BLKPROP_GET_COMPRESS((le)->le_prop),
 	    BLKPROP_GET_PROTECTED((le)->le_prop),
 	    BLKPROP_GET_PREFETCH((le)->le_prop));
-	asize = arc_hdr_size(hdr);
+	asize = vdev_psize_to_asize(dev->l2ad_vdev,
+	    BLKPROP_GET_PSIZE((le)->le_prop));
 
 	/*
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
@@ -9599,7 +9600,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_tail(&dev->l2ad_buflist, hdr);
-	(void) zfs_refcount_add_many(&dev->l2ad_alloc, asize, hdr);
+	(void) zfs_refcount_add_many(&dev->l2ad_alloc, arc_hdr_size(hdr), hdr);
 	mutex_exit(&dev->l2ad_mtx);
 
 	exists = buf_hash_insert(hdr, &hash_lock);
