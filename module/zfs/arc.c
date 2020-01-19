@@ -9197,7 +9197,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
 	l2arc_log_blkptr_t	lb_ptrs[2];
-	boolean_t		first_pass, lock_held;
+	boolean_t		lock_held;
 
 	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
 	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
@@ -9222,7 +9222,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 	/* Prepare the rebuild processing state */
 	bcopy(dev->l2ad_dev_hdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
-	first_pass = B_TRUE;
 
 	/* Start the rebuild process */
 	for (;;) {
@@ -9238,9 +9237,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * list detection.
 		 */
 		if (l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
-		    lb_ptrs[0].lbp_daddr,
-		    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr) &&
-		    !first_pass) {
+		    lb_ptrs[0].lbp_daddr, dev->l2ad_hand)) {
 			if (this_io != NULL)
 				l2arc_log_blk_fetch_abort(this_io);
 			break;
@@ -9285,7 +9282,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		PTR_SWAP(this_lb, next_lb);
 		this_io = next_io;
 		next_io = NULL;
-		first_pass = B_FALSE;
 
 		for (;;) {
 			if (dev->l2ad_rebuild_cancel) {
