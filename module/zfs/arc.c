@@ -8668,13 +8668,6 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 		taddr = dev->l2ad_end;
 	} else {
 		taddr = dev->l2ad_hand + distance;
-		/*
-		 * If vdev_trim_last_offset has previously reached the end
-		 * of the device but l2ad_hand has looped around, reset
-		 * vdev_trim_last_offset.
-		 */
-		if (vd->vdev_trim_last_offset == dev->l2ad_end)
-			vd->vdev_trim_last_offset = dev->l2ad_start;
 	}
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
@@ -8932,7 +8925,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	l2arc_write_callback_t *cb = NULL;
 	zio_t *pio, *wzio;
 	uint64_t guid = spa_load_guid(spa);
-	boolean_t dev_hdr_update = B_FALSE;
 
 	ASSERT3P(dev->l2ad_vdev, !=, NULL);
 
@@ -9127,10 +9119,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * arcstat_l2_{size,asize} kstats are updated
 			 * internally.
 			 */
-			if (l2arc_log_blk_insert(dev, hdr)) {
+			if (l2arc_log_blk_insert(dev, hdr))
 				l2arc_log_blk_commit(dev, pio, cb);
-				dev_hdr_update = B_TRUE;
-			}
 
 			(void) zio_nowait(wzio);
 		}
@@ -9146,6 +9136,25 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		ASSERT0(write_lsize);
 		ASSERT(!HDR_HAS_L1HDR(head));
 		kmem_cache_free(hdr_l2only_cache, head);
+
+		/*
+		 * Although we did not write any buffers, vdev_trim_last_offset
+		 * may still have advanced. Update the L2ARC device header.
+		 */
+		if (dev->l2ad_vdev->vdev_trim_last_offset >
+		    dev->l2ad_dev_hdr->dh_evict) {
+			cb = kmem_alloc(
+			    sizeof (l2arc_write_callback_t), KM_SLEEP);
+			cb->l2wcb_abd = NULL;
+			pio = zio_root(spa, NULL, NULL,
+			    ZIO_FLAG_CANFAIL);
+			l2arc_dev_hdr_update(dev, pio, cb);
+			(void) zio_wait(pio);
+			if (cb->l2wcb_abd != NULL)
+				abd_put(cb->l2wcb_abd);
+			kmem_free(cb, sizeof (l2arc_write_callback_t));
+		}
+
 		return (0);
 	}
 
@@ -9156,11 +9165,14 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
 
 	/*
-	 * If we wrote any logs as part of this write, update dev hdr
-	 * to point to it. If log_entries = 0 also update the header here,
+	 * If we reached this point, we have written buffers to L2ARC,
+	 * meaning that l2ad_hand and vdev_trim_last_offset have advanced
+	 * regardless of commiting log blocks. Update the device header.
+	 * If log_entries = 0 also update the header here,
 	 * otherwise it will not be updated, leading to dh_errors.
 	 */
-	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
+	if (dev->l2ad_vdev->vdev_trim_last_offset >
+	    dev->l2ad_dev_hdr->dh_evict)
 		l2arc_dev_hdr_update(dev, pio, cb);
 
 	/*
@@ -9170,6 +9182,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	if (dev->l2ad_hand + target_sz +
 	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
 		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_vdev->vdev_trim_last_offset = dev->l2ad_start;
+		dev->l2ad_dev_hdr->dh_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
@@ -9337,9 +9351,9 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
-	vd->vdev_trim_last_offset = adddev->l2ad_start;
 	hdr = adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
 	    KM_SLEEP);
+	vd->vdev_trim_last_offset = adddev->l2ad_start;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -9602,8 +9616,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	vd->vdev_trim_last_offset = dev->l2ad_hand =
-	    vdev_psize_to_asize(dev->l2ad_vdev,
+	vd->vdev_trim_last_offset = dev->l2ad_dev_hdr->dh_evict;
+	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
 	    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr +
 	    BLKPROP_GET_PSIZE(
 	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop));
@@ -9739,7 +9753,8 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	if (abd != NULL)
 		abd_put(abd);
 
-	if (err != 0) {
+	if (err != 0 || hdr->dh_evict > dev->l2ad_end ||
+	    hdr->dh_evict < dev->l2ad_start) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
 		return (err);
 	}
@@ -10059,6 +10074,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 	hdr->dh_alloc_space = zfs_refcount_count(&dev->l2ad_alloc);
+	hdr->dh_evict = dev->l2ad_vdev->vdev_trim_last_offset;
 	hdr->dh_flags = 0;
 	if (dev->l2ad_first)
 		hdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
@@ -10181,14 +10197,12 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 * - it has a valid size
 	 * - it was not trimmed by l2arc_evict()
 	 */
-	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * (l2arc_write_size() +
-		l2arc_log_blk_overhead(l2arc_write_size(), dev))))) {
+	if (dev->l2ad_vdev->vdev_trim_last_offset > dev->l2ad_hand) {
 		trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
-		    dev->l2ad_end, lbp->lbp_daddr);
+		    dev->l2ad_vdev->vdev_trim_last_offset,
+		    lbp->lbp_daddr);
 	} else {
-		trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
-		    l2arc_log_blk_overhead(l2arc_write_size(), dev) +
-		    l2arc_write_size() + dev->l2ad_hand, lbp->lbp_daddr);
+		trimmed = B_FALSE;
 	}
 
 	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&

@@ -219,7 +219,8 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	const uint64_t		dh_pad[41];	/* pad to 512 bytes */
+	uint64_t		dh_evict;
+	const uint64_t		dh_pad[40];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
