@@ -8648,14 +8648,6 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 
 	buflist = &dev->l2ad_buflist;
 
-	if (!all && dev->l2ad_first) {
-		/*
-		 * This is the first sweep through the device.  There is
-		 * nothing to evict.
-		 */
-		return;
-	}
-
 	/*
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
@@ -8703,6 +8695,14 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 			vdev_trim_simple(vd, dev->l2ad_hand,
 			    taddr - dev->l2ad_hand, TRIM_TYPE_AUTO);
 		}
+	}
+
+	if (!all && dev->l2ad_first) {
+		/*
+		 * This is the first sweep through the device.  There is
+		 * nothing to evict.
+		 */
+		return;
 	}
 
 top:
