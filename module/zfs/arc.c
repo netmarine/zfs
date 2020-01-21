@@ -7663,6 +7663,11 @@ arc_fini(void)
  * some time and memory at l2arc rebuild to reconstruct outdated ARC
  * entries that will get dropped from the l2arc as it is being updated
  * with new blocks.
+ *
+ * L2ARC buffers that have been evicted by l2arc_evict() ahead of the write
+ * hand are not restored. This is done by saving the offset (in bytes)
+ * l2arc_evict() has evicted to in the L2ARC device header and taking it
+ * into account when restoring buffers.
  */
 
 static boolean_t

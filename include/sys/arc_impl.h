@@ -221,7 +221,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	uint64_t		dh_evict;	/* evicted hand */
+	uint64_t		dh_evict;	/* evicted offset in bytes */
 	const uint64_t		dh_pad[40];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
