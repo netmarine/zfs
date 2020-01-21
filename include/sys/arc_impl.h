@@ -221,7 +221,8 @@ typedef struct l2arc_dev_hdr_phys {
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
 	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	const uint64_t		dh_pad[41];	/* pad to 512 bytes */
+	uint64_t		dh_evict;	/* evicted hand */
+	const uint64_t		dh_pad[40];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
@@ -341,6 +342,7 @@ typedef struct l2arc_dev {
 	boolean_t		l2ad_rebuild;
 	boolean_t		l2ad_rebuild_cancel;
 	boolean_t		l2ad_rebuild_began;
+	uint64_t		l2ad_evict;	/* evict hand */
 } l2arc_dev_t;
 
 /*
