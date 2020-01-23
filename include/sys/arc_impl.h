@@ -276,10 +276,10 @@ CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) <= SPA_MAXBLOCKSIZE);
  * These structures hold in-flight abd buffers for log blocks as they're being
  * written to the L2ARC device.
  */
-typedef struct l2arc_log_blk_abd {
+typedef struct l2arc_lb_abd_buf {
 	abd_t		*abd;
 	list_node_t	node;
-} l2arc_log_blk_abd_t;
+} l2arc_lb_abd_buf_t;
 
 /*
  * These structures hold pointers to log blocks present on the L2ARC device.
