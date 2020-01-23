@@ -7841,13 +7841,14 @@ l2arc_do_free_on_write(void)
 static void
 l2arc_write_done(zio_t *zio)
 {
-	l2arc_write_callback_t *cb;
-	l2arc_log_blk_abd_t *abd_buf;
-	l2arc_dev_t *dev;
-	list_t *buflist;
-	arc_buf_hdr_t *head, *hdr, *hdr_prev;
-	kmutex_t *hash_lock;
-	int64_t bytes_dropped = 0;
+	l2arc_write_callback_t	*cb;
+	l2arc_lb_abd_buf_t	*abd_buf;
+	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
+	l2arc_dev_t		*dev;
+	list_t			*buflist;
+	arc_buf_hdr_t		*head, *hdr, *hdr_prev;
+	kmutex_t		*hash_lock;
+	int64_t			bytes_dropped = 0;
 
 	cb = zio->io_private;
 	ASSERT3P(cb, !=, NULL);
@@ -7944,6 +7945,26 @@ top:
 		mutex_exit(hash_lock);
 	}
 
+	/*
+	 * Free the allocated abd buffers for writing the log blocks.
+	 * If the zio failed reclaim the allocated space and remove the
+	 * pointers to these log blocks from the log block pointer list
+	 * of the L2ARC device.
+	 */
+	while ((abd_buf = list_remove_tail(&cb->l2wcb_abd_list)) != NULL) {
+		abd_free(abd_buf->abd);
+		zio_buf_free(abd_buf, sizeof (*abd_buf));
+		if (zio->io_error != 0) {
+			lb_ptr_buf = list_remove_head(&dev->l2ad_lbptr_list);
+			bytes_dropped += vdev_psize_to_asize(dev->l2ad_vdev,
+			    BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop));
+			kmem_free(lb_ptr_buf->lb_ptr,
+			    sizeof (l2arc_log_blkptr_t));
+			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
+		}
+	}
+	list_destroy(&cb->l2wcb_abd_list);
+
 	atomic_inc_64(&l2arc_writes_done);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
@@ -7954,13 +7975,9 @@ top:
 	vdev_space_update(dev->l2ad_vdev, -bytes_dropped, 0, 0);
 
 	l2arc_do_free_on_write();
-	while ((abd_buf = list_remove_tail(&cb->l2wcb_abd_list)) != NULL) {
-		abd_free(abd_buf->abd);
-		zio_buf_free(abd_buf, sizeof (*abd_buf));
-	}
+
 	if (cb->l2wcb_abd != NULL)
 		abd_put(cb->l2wcb_abd);
-	list_destroy(&cb->l2wcb_abd_list);
 	kmem_free(cb, sizeof (l2arc_write_callback_t));
 }
 
@@ -8723,8 +8740,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				cb->l2wcb_head = head;
 				cb->l2wcb_abd = NULL;
 				list_create(&cb->l2wcb_abd_list,
-				    sizeof (l2arc_log_blk_abd_t),
-				    offsetof(l2arc_log_blk_abd_t, node));
+				    sizeof (l2arc_lb_abd_buf_t),
+				    offsetof(l2arc_lb_abd_buf_t, node));
 				pio = zio_root(spa, l2arc_write_done, cb,
 				    ZIO_FLAG_CANFAIL);
 			}
@@ -9069,7 +9086,6 @@ void
 l2arc_remove_vdev(vdev_t *vd)
 {
 	l2arc_dev_t		*remdev = NULL;
-	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 
 	/*
 	 * Find the device by vdev
@@ -9102,11 +9118,7 @@ l2arc_remove_vdev(vdev_t *vd)
 	 */
 	l2arc_evict(remdev, 0, B_TRUE);
 	list_destroy(&remdev->l2ad_buflist);
-	while ((lb_ptr_buf =
-	    list_remove_tail(&remdev->l2ad_lbptr_list)) != NULL) {
-		kmem_free(lb_ptr_buf->lb_ptr, sizeof (l2arc_log_blkptr_t));
-		kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
-	}
+	ASSERT(list_is_empty(&remdev->l2ad_lbptr_list));
 	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
@@ -9767,7 +9779,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
 	uint64_t		psize, asize;
 	zio_t			*wzio;
-	l2arc_log_blk_abd_t	*abd_buf;
+	l2arc_lb_abd_buf_t	*abd_buf;
 	uint8_t			*tmpbuf;
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 
