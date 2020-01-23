@@ -23,10 +23,10 @@
 
 #
 # DESCRIPTION:
-#	Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0
+#	Persistent L2ARC fails as expected when L2ARC_REBUILD_ENABLED = 0
 #
 # STRATEGY:
-#	1. Set l2arc_rebuild_enabled = 0
+#	1. Set L2ARC_REBUILD_ENABLED = 0
 #	2. Create pool with a cache device.
 #	3. Create a random file in that pool and random read for 30 sec.
 #	4. Export pool.
@@ -38,7 +38,7 @@
 
 verify_runnable "global"
 
-log_assert "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
+log_assert "Persistent L2ARC fails as expected when L2ARC_REBUILD_ENABLED = 0."
 
 function cleanup
 {
@@ -46,18 +46,18 @@ function cleanup
 		destroy_pool $TESTPOOL
 	fi
 
-	log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
-	log_must set_tunable32 l2arc_noprefetch $noprefetch
+	log_must set_tunable32 L2ARC_REBUILD_ENABLED $rebuild_enabled
+	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
 }
 log_onexit cleanup
 
-# l2arc_noprefetch is set to 0 to let L2ARC handle prefetches
-typeset noprefetch=$(get_tunable l2arc_noprefetch)
-log_must set_tunable32 l2arc_noprefetch 0
+# L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
+typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
+log_must set_tunable32 L2ARC_NOPREFETCH 0
 
 # disable L2ARC rebuild
-typeset rebuild_enabled=$(get_tunable l2arc_rebuild_enabled)
-log_must set_tunable32 l2arc_rebuild_enabled 0
+typeset rebuild_enabled=$(get_tunable L2ARC_REBUILD_ENABLED)
+log_must set_tunable32 L2ARC_REBUILD_ENABLED 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
@@ -85,6 +85,6 @@ typeset l2_success_end=$(grep l2_rebuild_success /proc/spl/kstat/zfs/arcstats | 
 log_mustnot test $l2_success_end -gt $l2_success_start
 
 log_must zpool destroy -f $TESTPOOL
-log_must set_tunable32 l2arc_rebuild_enabled $rebuild_enabled
+log_must set_tunable32 L2ARC_REBUILD_ENABLED $rebuild_enabled
 
-log_pass "Persistent L2ARC fails as expected when l2arc_rebuild_enabled = 0."
+log_pass "Persistent L2ARC fails as expected when L2ARC_REBUILD_ENABLED = 0."

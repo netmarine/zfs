@@ -49,13 +49,13 @@ function cleanup
 		destroy_pool $TESTPOOL
 	fi
 
-	log_must set_tunable32 l2arc_noprefetch $noprefetch
+	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
 }
 log_onexit cleanup
 
-# l2arc_noprefetch is set to 0 to let L2ARC handle prefetches
-typeset noprefetch=$(get_tunable l2arc_noprefetch)
-log_must set_tunable32 l2arc_noprefetch 0
+# L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
+typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
+log_must set_tunable32 L2ARC_NOPREFETCH 0
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
