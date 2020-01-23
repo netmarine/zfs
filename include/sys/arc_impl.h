@@ -283,6 +283,14 @@ typedef struct l2arc_log_blk_abd {
 	list_node_t	node;
 } l2arc_log_blk_abd_t;
 
+/*
+ * These structures hold pointers to log blocks present on the L2ARC device.
+ */
+typedef struct l2arc_lb_ptr_buf {
+	l2arc_log_blkptr_t	*lb_ptr;
+	list_node_t		node;
+} l2arc_lb_ptr_buf_t;
+
 /* Macros for setting fields in le_prop and lbp_prop */
 #define	BLKPROP_GET_LSIZE(field)	\
 	BF64_GET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1)
@@ -342,7 +350,9 @@ typedef struct l2arc_dev {
 	boolean_t		l2ad_rebuild;
 	boolean_t		l2ad_rebuild_cancel;
 	boolean_t		l2ad_rebuild_began;
-	uint64_t		l2ad_evict;	/* evict hand */
+	uint64_t		l2ad_evict;	/* evicted offset in bytes */
+	/* list of pointers to log blocks present in the L2ARC device */
+	list_t			l2ad_lbptr_list;
 } l2arc_dev_t;
 
 /*
@@ -380,7 +390,6 @@ typedef struct l2arc_buf_hdr {
 	l2arc_dev_t		*b_dev;		/* L2ARC device */
 	uint64_t		b_daddr;	/* disk address, offset byte */
 	uint32_t		b_hits;
-
 	list_node_t		b_l2node;
 } l2arc_buf_hdr_t;
 

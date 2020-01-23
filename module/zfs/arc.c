@@ -8273,11 +8273,11 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 static void
 l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 {
-	list_t *buflist;
-	arc_buf_hdr_t *hdr, *hdr_prev;
-	kmutex_t *hash_lock;
-	uint64_t taddr;
-	boolean_t rerun;
+	list_t			*buflist;
+	arc_buf_hdr_t		*hdr, *hdr_prev;
+	kmutex_t		*hash_lock;
+	uint64_t 		taddr, lb_ptr_daddr;
+	l2arc_lb_ptr_buf_t	*lb_ptr_buf, *lb_ptr_buf_prev;
 
 	buflist = &dev->l2ad_buflist;
 
@@ -8314,6 +8314,32 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 
 top:
 	mutex_enter(&dev->l2ad_mtx);
+	/*
+	 * We have to account for evicted log blocks. Run vdev_space_update()
+	 * on log blocks whose offset (in bytes) is before the evicted offset
+	 * (in bytes) by searching in the list of pointers to log blocks
+	 * present in the L2ARC device.
+	 */
+	for (lb_ptr_buf = list_tail(&dev->l2ad_lbptr_list); lb_ptr_buf;
+	    lb_ptr_buf = lb_ptr_buf_prev) {
+
+		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
+		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
+
+		if (!all && lb_ptr_daddr > dev->l2ad_evict)
+			break;
+
+		if (lb_ptr_daddr < dev->l2ad_evict || all) {
+			vdev_space_update(dev->l2ad_vdev,
+			    -BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop),
+			    0, 0);
+			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
+			kmem_free(lb_ptr_buf->lb_ptr,
+			    sizeof (l2arc_log_blkptr_t));
+			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
+		}
+	}
+
 	for (hdr = list_tail(buflist); hdr; hdr = hdr_prev) {
 		hdr_prev = list_prev(buflist, hdr);
 
@@ -8532,7 +8558,8 @@ l2arc_blk_fetch_done(zio_t *zio)
  * state between calls to this function.
  *
  * Returns the number of bytes actually written (which may be smaller than
- * the delta by which the device hand has changed due to alignment).
+ * the delta by which the device hand has changed due to alignment and the
+ * writing of log blocks).
  */
 static uint64_t
 l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
@@ -8978,6 +9005,9 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	list_create(&adddev->l2ad_buflist, sizeof (arc_buf_hdr_t),
 	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
 
+	list_create(&adddev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
+	    offsetof(l2arc_lb_ptr_buf_t, node));
+
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
 	zfs_refcount_create(&adddev->l2ad_alloc);
 
@@ -9038,7 +9068,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 void
 l2arc_remove_vdev(vdev_t *vd)
 {
-	l2arc_dev_t *remdev = NULL;
+	l2arc_dev_t		*remdev = NULL;
+	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 
 	/*
 	 * Find the device by vdev
@@ -9071,6 +9102,12 @@ l2arc_remove_vdev(vdev_t *vd)
 	 */
 	l2arc_evict(remdev, 0, B_TRUE);
 	list_destroy(&remdev->l2ad_buflist);
+	while ((lb_ptr_buf =
+	    list_remove_tail(&remdev->l2ad_lbptr_list)) != NULL) {
+		kmem_free(lb_ptr_buf->lb_ptr, sizeof (l2arc_log_blkptr_t));
+		kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
+	}
+	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
@@ -9215,6 +9252,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
 	l2arc_log_blkptr_t	lb_ptrs[2];
+	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 	boolean_t		lock_held;
 
 	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
@@ -9295,7 +9333,22 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		l2arc_log_blk_restore(dev, this_lb,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
 
-		/* log blk restored, continue with next one in the list */
+		/*
+		 * log blk restored, include its pointer in the list of pointers
+		 * to log blocks present in the L2ARC device, and continue with
+		 * the next one in the list.
+		 */
+		lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
+		lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t),
+		    KM_SLEEP);
+		bcopy(&lb_ptrs[0], lb_ptr_buf->lb_ptr,
+		    sizeof (l2arc_log_blkptr_t));
+		mutex_enter(&dev->l2ad_mtx);
+		list_insert_tail(&dev->l2ad_lbptr_list, lb_ptr_buf);
+		mutex_exit(&dev->l2ad_mtx);
+		vdev_space_update(vd,
+		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
+
 		lb_ptrs[0] = lb_ptrs[1];
 		lb_ptrs[1] = this_lb->lb_prev_lbp;
 		PTR_SWAP(this_lb, next_lb);
@@ -9716,17 +9769,21 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	zio_t			*wzio;
 	l2arc_log_blk_abd_t	*abd_buf;
 	uint8_t			*tmpbuf;
+	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 
 	VERIFY3S(dev->l2ad_log_ent_idx, ==, dev->l2ad_dev_hdr->dh_log_blk_ent);
+
+	tmpbuf = zio_buf_alloc(sizeof (*lb));
+	abd_buf = zio_buf_alloc(sizeof (*abd_buf));
+	abd_buf->abd = abd_get_from_buf(lb, sizeof (*lb));
+	lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
+	lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t), KM_SLEEP);
 
 	/* link the buffer into the block chain */
 	lb->lb_prev_lbp = dev->l2ad_dev_hdr->dh_start_lbps[1];
 	lb->lb_magic = L2ARC_LOG_BLK_MAGIC;
 
 	/* try to compress the buffer */
-	tmpbuf = zio_buf_alloc(sizeof (*lb));
-	abd_buf = zio_buf_alloc(sizeof (*abd_buf));
-	abd_buf->abd = abd_get_from_buf(lb, sizeof (*lb));
 	list_insert_tail(&cb->l2wcb_abd_list, abd_buf);
 	psize = zio_compress_data(ZIO_COMPRESS_LZ4,
 	    abd_buf->abd, tmpbuf, sizeof (*lb));
@@ -9769,8 +9826,9 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	fletcher_4_native(tmpbuf, asize, NULL,
 	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
 
-	/* perform the write itself */
 	abd_put(abd_buf->abd);
+
+	/* perform the write itself */
 	abd_buf->abd = abd_get_from_buf(tmpbuf, sizeof (*lb));
 	abd_take_ownership_of_buf(abd_buf->abd, B_TRUE);
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, dev->l2ad_hand,
@@ -9780,6 +9838,15 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	(void) zio_nowait(wzio);
 
 	dev->l2ad_hand += asize;
+	/*
+	 * Include the committed log block's pointer  in the list of pointers
+	 * to log blocks present in the L2ARC device.
+	 */
+	bcopy(&dev->l2ad_dev_hdr->dh_start_lbps[0], lb_ptr_buf->lb_ptr,
+	    sizeof (l2arc_log_blkptr_t));
+	mutex_enter(&dev->l2ad_mtx);
+	list_insert_head(&dev->l2ad_lbptr_list, lb_ptr_buf);
+	mutex_exit(&dev->l2ad_mtx);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	/* bump the kstats */
