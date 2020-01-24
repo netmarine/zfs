@@ -8693,31 +8693,19 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	 */
 	if (!all && vd->vdev_has_trim) {
 		/*
-		 * If the size of the cache device is less than or equal to
-		 * (2 * distance) bytes then we should not account for
-		 * vdev_trim_last_offset when trimming because l2ad_hand will
-		 * always be within (2 * distance ) bytes from l2ad_end, and
-		 * vdev_trim_last_offset will not be reset.
+		 * We save taddr in vdev_trim_last_offset, and if it
+		 * is greater or equal to taddr in the next run, skip
+		 * trimming. Advance vdev_trim_last_offset even if the
+		 * trim failed, since l2arc_write_buffers() might write
+		 * here.
 		 */
-		if ((dev->l2ad_end - dev->l2ad_start) > (2 * distance)) {
-			/*
-			 * We save taddr in vdev_trim_last_offset, and if it
-			 * is greater or equal to taddr in the next run, skip
-			 * trimming. Advance vdev_trim_last_offset even if the
-			 * trim failed, since l2arc_write_buffers() might write
-			 * here.
-			 */
-			if (vd->vdev_trim_last_offset < taddr) {
-				vdev_trim_simple(vd,
-				    vd->vdev_trim_last_offset -
-				    VDEV_LABEL_START_SIZE,
-				    taddr - vd->vdev_trim_last_offset,
-				    TRIM_TYPE_AUTO);
-				vd->vdev_trim_last_offset = taddr;
-			}
-		} else {
-			vdev_trim_simple(vd, dev->l2ad_hand,
-			    taddr - dev->l2ad_hand, TRIM_TYPE_AUTO);
+		if (vd->vdev_trim_last_offset < taddr) {
+			vdev_trim_simple(vd,
+			    vd->vdev_trim_last_offset -
+			    VDEV_LABEL_START_SIZE,
+			    taddr - vd->vdev_trim_last_offset,
+			    TRIM_TYPE_AUTO);
+			vd->vdev_trim_last_offset = taddr;
 		}
 	}
 
