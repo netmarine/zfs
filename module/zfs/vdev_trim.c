@@ -1433,19 +1433,13 @@ int
 vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 {
 	trim_args_t		ta;
-	range_seg_t 		logical_rs, physical_rs;
+	range_seg_t 		physical_rs;
 	int			error;
-	logical_rs.rs_start = start;
-	logical_rs.rs_end = start + size;
+	physical_rs.rs_start = start;
+	physical_rs.rs_end = start + size;
 
 	ASSERT(vdev_is_concrete(vd));
 	ASSERT(vd->vdev_ops->vdev_op_leaf);
-	vdev_xlate(vd, &logical_rs, &physical_rs);
-
-	IMPLY(vd->vdev_top == vd,
-	    logical_rs.rs_start == physical_rs.rs_start);
-	IMPLY(vd->vdev_top == vd,
-	    logical_rs.rs_end == physical_rs.rs_end);
 
 	ta.trim_vdev = vd;
 	ta.trim_tree = range_tree_create(NULL, NULL);
@@ -1456,11 +1450,6 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 
 	ASSERT3U(physical_rs.rs_end, >=, physical_rs.rs_start);
 
-	/*
-	 * With raidz, it's possible that the logical range does not live on
-	 * this leaf vdev. We only add the physical range to this vdev's if it
-	 * has a length greater than 0.
-	 */
 	if (physical_rs.rs_end > physical_rs.rs_start) {
 		range_tree_add(ta.trim_tree, physical_rs.rs_start,
 		    physical_rs.rs_end - physical_rs.rs_start);
