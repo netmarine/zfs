@@ -8709,7 +8709,8 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 			 */
 			if (vd->vdev_trim_last_offset < taddr) {
 				vdev_trim_simple(vd,
-				    vd->vdev_trim_last_offset,
+				    vd->vdev_trim_last_offset -
+				    VDEV_LABEL_START_SIZE,
 				    taddr - vd->vdev_trim_last_offset,
 				    TRIM_TYPE_AUTO);
 				vd->vdev_trim_last_offset = taddr;
