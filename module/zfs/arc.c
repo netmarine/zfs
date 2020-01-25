@@ -8734,7 +8734,8 @@ top:
 		if (!all && lb_ptr_daddr > vd->vdev_trim_last_offset)
 			break;
 
-		if (lb_ptr_daddr < vd->vdev_trim_last_offset || all) {
+		if (lb_ptr_daddr < MAX(dev->l2ad_evict,
+		    vd->vdev_trim_last_offset) || all) {
 			vdev_space_update(dev->l2ad_vdev,
 			    -BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop),
 			    0, 0);
@@ -8960,7 +8961,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 {
 	arc_buf_hdr_t *hdr, *hdr_prev, *head;
 	uint64_t write_asize, write_psize, write_lsize, headroom;
-	boolean_t full;
+	boolean_t full, dev_hdr_update;
 	l2arc_write_callback_t *cb = NULL;
 	zio_t *pio, *wzio;
 	uint64_t guid = spa_load_guid(spa);
@@ -8970,6 +8971,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	pio = NULL;
 	write_lsize = write_asize = write_psize = 0;
 	full = B_FALSE;
+	dev_hdr_update = B_FALSE;
 	head = kmem_cache_alloc(hdr_l2only_cache, KM_PUSHPAGE);
 	arc_hdr_set_flags(head, ARC_FLAG_L2_WRITE_HEAD | ARC_FLAG_HAS_L2HDR);
 
@@ -9158,8 +9160,10 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * arcstat_l2_{size,asize} kstats are updated
 			 * internally.
 			 */
-			if (l2arc_log_blk_insert(dev, hdr))
+			if (l2arc_log_blk_insert(dev, hdr)) {
 				l2arc_log_blk_commit(dev, pio, cb);
+				dev_hdr_update = B_TRUE;
+			}
 
 			(void) zio_nowait(wzio);
 		}
@@ -9204,14 +9208,11 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
 
 	/*
-	 * If we reached this point, we have written buffers to L2ARC,
-	 * meaning that l2ad_hand and vdev_trim_last_offset have advanced
-	 * regardless of commiting log blocks. Update the device header.
+	 * If we have written log blocks update the L2ARC device header.
 	 * If log_entries = 0 also update the header here,
 	 * otherwise it will not be updated, leading to dh_errors.
 	 */
-	if (dev->l2ad_vdev->vdev_trim_last_offset >
-	    dev->l2ad_dev_hdr->dh_evict)
+	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
 		l2arc_dev_hdr_update(dev, pio, cb);
 
 	/*
