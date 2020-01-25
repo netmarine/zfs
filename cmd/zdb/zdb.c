@@ -61,6 +61,7 @@
 #include <sys/zio_compress.h>
 #include <sys/zfs_fuid.h>
 #include <sys/arc.h>
+#include <sys/arc_impl.h>
 #include <sys/ddt.h>
 #include <sys/zfeature.h>
 #include <sys/abd.h>
@@ -2901,6 +2902,18 @@ print_label_header(zdb_label_t *label, int l)
 }
 
 static void
+print_l2arc_header(void)
+{
+
+	if (dump_opt['q'])
+		return;
+
+	(void) printf("------------------------------------\n");
+	(void) printf("L2ARC device header\n");
+	(void) printf("------------------------------------\n");
+}
+
+static void
 dump_config_from_label(zdb_label_t *label, size_t buflen, int l)
 {
 	if (dump_opt['q'])
@@ -3073,6 +3086,7 @@ dump_label(const char *dev)
 	avl_tree_t uberblock_tree;
 	void *node, *cookie;
 	int fd;
+	l2arc_dev_hdr_phys_t hdr;
 
 	bzero(labels, sizeof (labels));
 
@@ -3186,6 +3200,26 @@ dump_label(const char *dev)
 
 			label->uberblocks[i] = rec;
 		}
+	}
+
+	boolean_t val = B_FALSE;
+	nvlist_lookup_boolean_value(labels[0].config_nv,
+	    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &val);
+	if (val) {
+		pread64(fd, &hdr, sizeof (hdr), VDEV_LABEL_START_SIZE);
+		(void) print_l2arc_header();
+		(void) printf("    dh_magic: %lu\n", hdr.dh_magic);
+		(void) printf("    dh_version: %lu\n", hdr.dh_version);
+		(void) printf("    dh_spa_guid: %lu\n", hdr.dh_spa_guid);
+		(void) printf("    dh_alloc_space: %lu\n", hdr.dh_alloc_space);
+		(void) printf("    dh_flags: %lu\n", hdr.dh_flags);
+		(void) printf("    dh_start_lbps[0]: %lu\n",
+		    hdr.dh_start_lbps[0].lbp_daddr);
+		(void) printf("    dh_start_lbps[1]: %lu\n",
+		    hdr.dh_start_lbps[1].lbp_daddr);
+		(void) printf("    dh_log_blk_ent: %lu\n", hdr.dh_log_blk_ent);
+		(void) printf("    dh_evict: %lu\n", hdr.dh_evict);
+		(void) printf("\n");
 	}
 
 	/*
