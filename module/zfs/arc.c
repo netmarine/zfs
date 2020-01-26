@@ -8328,6 +8328,8 @@ top:
 		zio_buf_free(abd_buf, sizeof (*abd_buf));
 		if (zio->io_error != 0) {
 			lb_ptr_buf = list_remove_head(&dev->l2ad_lbptr_list);
+			zfs_refcount_remove(&dev->l2ad_log_blk_count,
+			    lb_ptr_buf);
 			bytes_dropped += vdev_psize_to_asize(dev->l2ad_vdev,
 			    BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop));
 			kmem_free(lb_ptr_buf->lb_ptr,
@@ -8705,7 +8707,8 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 			    VDEV_LABEL_START_SIZE,
 			    taddr - vd->vdev_trim_last_offset,
 			    TRIM_TYPE_AUTO);
-			vd->vdev_trim_last_offset = taddr;
+			vd->vdev_trim_last_offset = MAX(taddr,
+			    dev->l2ad_dev_hdr->dh_evict;);
 		}
 	}
 
@@ -8731,15 +8734,18 @@ top:
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
 		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
 
-		if (!all && lb_ptr_daddr > vd->vdev_trim_last_offset)
+		if (!all && !l2arc_range_check_overlap(dev->l2ad_hand,
+		    vd->vdev_trim_last_offset, lb_ptr_daddr))
 			break;
 
-		if (lb_ptr_daddr < MAX(dev->l2ad_evict,
-		    vd->vdev_trim_last_offset) || all) {
+		if (all || l2arc_range_check_overlap(dev->l2ad_hand,
+		    vd->vdev_trim_last_offset, lb_ptr_daddr)) {
 			vdev_space_update(dev->l2ad_vdev,
 			    -BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop),
 			    0, 0);
 			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
+			zfs_refcount_remove(&dev->l2ad_log_blk_count,
+			    lb_ptr_buf);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
 			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
@@ -9184,19 +9190,15 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		 * Although we did not write any buffers, vdev_trim_last_offset
 		 * may still have advanced. Update the L2ARC device header.
 		 */
-		if (dev->l2ad_vdev->vdev_trim_last_offset >
-		    dev->l2ad_dev_hdr->dh_evict) {
-			cb = kmem_alloc(
-			    sizeof (l2arc_write_callback_t), KM_SLEEP);
-			cb->l2wcb_abd = NULL;
-			pio = zio_root(spa, NULL, NULL,
-			    ZIO_FLAG_CANFAIL);
-			l2arc_dev_hdr_update(dev, pio, cb);
-			(void) zio_wait(pio);
-			if (cb->l2wcb_abd != NULL)
-				abd_put(cb->l2wcb_abd);
-			kmem_free(cb, sizeof (l2arc_write_callback_t));
-		}
+		cb = kmem_alloc(sizeof (l2arc_write_callback_t),
+		    KM_SLEEP);
+		cb->l2wcb_abd = NULL;
+		pio = zio_root(spa, NULL, NULL, ZIO_FLAG_CANFAIL);
+		l2arc_dev_hdr_update(dev, pio, cb);
+		(void) zio_wait(pio);
+		if (cb->l2wcb_abd != NULL)
+			abd_put(cb->l2wcb_abd);
+		kmem_free(cb, sizeof (l2arc_write_callback_t));
 
 		return (0);
 	}
@@ -9408,6 +9410,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
 	zfs_refcount_create(&adddev->l2ad_alloc);
+	zfs_refcount_create(&adddev->l2ad_log_blk_count);
 
 	/*
 	 * The L2ARC has to hold at least the payload of one log block for
@@ -9448,7 +9451,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 */
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
-	if (rebuild && l2arc_rebuild_enabled && hdr->dh_log_blk_ent > 0) {
+	if (rebuild && l2arc_rebuild_enabled && hdr->dh_log_blk_ent > 0 &&
+	    hdr->dh_log_blk_count > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
@@ -9503,6 +9507,7 @@ l2arc_remove_vdev(vdev_t *vd)
 	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
+	zfs_refcount_destroy(&remdev->l2ad_log_blk_count);
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
 	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
@@ -9674,22 +9679,14 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	bcopy(dev->l2ad_dev_hdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
 	/* Start the rebuild process */
-	for (;;) {
-		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0])) {
-			/* We hit an invalid block address, end the rebuild. */
-			if (this_io != NULL)
-				l2arc_log_blk_fetch_abort(this_io);
-			break;
-		}
-
+	for (int i = 0; i <= dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
 		/*
-		 * Protection against infinite loops of log blocks and end of
-		 * list detection.
+		 * If we hit an invalid block address end the rebuild. Also
+		 * protect against infinite loops of log blocks.
 		 */
-		if (l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
+		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]) ||
+		    l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
 		    lb_ptrs[0].lbp_daddr, dev->l2ad_hand)) {
-			if (this_io != NULL)
-				l2arc_log_blk_fetch_abort(this_io);
 			break;
 		}
 
@@ -9739,6 +9736,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		mutex_enter(&dev->l2ad_mtx);
 		list_insert_tail(&dev->l2ad_lbptr_list, lb_ptr_buf);
 		mutex_exit(&dev->l2ad_mtx);
+		zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 		vdev_space_update(vd,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
 
@@ -9773,6 +9771,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		}
 	}
 out:
+	if (this_io != NULL)
+		l2arc_log_blk_fetch_abort(this_io);
 	if (next_io != NULL)
 		l2arc_log_blk_fetch_abort(next_io);
 	vmem_free(this_lb, sizeof (*this_lb));
@@ -10134,7 +10134,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
 	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
-	hdr->dh_alloc_space = zfs_refcount_count(&dev->l2ad_alloc);
+	hdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
 	hdr->dh_evict = dev->l2ad_vdev->vdev_trim_last_offset;
 	hdr->dh_flags = 0;
 	if (dev->l2ad_first)
@@ -10240,6 +10240,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_head(&dev->l2ad_lbptr_list, lb_ptr_buf);
 	mutex_exit(&dev->l2ad_mtx);
+	zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	/* bump the kstats */

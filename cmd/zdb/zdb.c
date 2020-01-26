@@ -3211,12 +3211,13 @@ dump_label(const char *dev)
 		(void) printf("    dh_magic: %lu\n", hdr.dh_magic);
 		(void) printf("    dh_version: %lu\n", hdr.dh_version);
 		(void) printf("    dh_spa_guid: %lu\n", hdr.dh_spa_guid);
-		(void) printf("    dh_alloc_space: %lu\n", hdr.dh_alloc_space);
 		(void) printf("    dh_flags: %lu\n", hdr.dh_flags);
 		(void) printf("    dh_start_lbps[0]: %lu\n",
 		    hdr.dh_start_lbps[0].lbp_daddr);
 		(void) printf("    dh_start_lbps[1]: %lu\n",
 		    hdr.dh_start_lbps[1].lbp_daddr);
+		(void) printf("    dh_log_blk_count: %lu\n",
+		    hdr.dh_log_blk_count);
 		(void) printf("    dh_log_blk_ent: %lu\n", hdr.dh_log_blk_ent);
 		(void) printf("    dh_evict: %lu\n", hdr.dh_evict);
 		(void) printf("\n");
