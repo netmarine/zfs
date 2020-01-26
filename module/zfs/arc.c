@@ -900,8 +900,7 @@ static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
     l2arc_dev_t *dev);
 
 /* L2ARC persistence write I/O routines. */
-static void l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
-    l2arc_write_callback_t *cb);
+static void l2arc_dev_hdr_update(l2arc_dev_t *dev);
 static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
     l2arc_write_callback_t *cb);
 
@@ -7978,8 +7977,6 @@ top:
 
 	l2arc_do_free_on_write();
 
-	if (cb->l2wcb_abd != NULL)
-		abd_put(cb->l2wcb_abd);
 	kmem_free(cb, sizeof (l2arc_write_callback_t));
 }
 
@@ -8745,7 +8742,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				    sizeof (l2arc_write_callback_t), KM_SLEEP);
 				cb->l2wcb_dev = dev;
 				cb->l2wcb_head = head;
-				cb->l2wcb_abd = NULL;
 				list_create(&cb->l2wcb_abd_list,
 				    sizeof (l2arc_lb_abd_buf_t),
 				    offsetof(l2arc_lb_abd_buf_t, node));
@@ -8809,18 +8805,11 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		kmem_cache_free(hdr_l2only_cache, head);
 
 		/*
-		 * Although we did not write any buffers, l2ad_evict
-		 * may still have advanced. Update the L2ARC device header.
+		 * Although we did not write any buffers l2ad_evict may
+		 * have advanced. If true update the L2ARC device header.
 		 */
-		cb = kmem_alloc(sizeof (l2arc_write_callback_t),
-		    KM_SLEEP);
-		cb->l2wcb_abd = NULL;
-		pio = zio_root(spa, NULL, NULL, ZIO_FLAG_CANFAIL);
-		l2arc_dev_hdr_update(dev, pio, cb);
-		(void) zio_wait(pio);
-		if (cb->l2wcb_abd != NULL)
-			abd_put(cb->l2wcb_abd);
-		kmem_free(cb, sizeof (l2arc_write_callback_t));
+		if (dev->l2ad_evict > dev->l2ad_dev_hdr->dh_evict)
+			l2arc_dev_hdr_update(dev);
 
 		return (0);
 	}
@@ -8837,7 +8826,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * otherwise it will not be updated, leading to dh_errors.
 	 */
 	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
-		l2arc_dev_hdr_update(dev, pio, cb);
+		l2arc_dev_hdr_update(dev);
 
 	/*
 	 * Bump device hand to the device start if it is approaching the end.
@@ -8996,6 +8985,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	l2arc_dev_t		*adddev;
 	l2arc_dev_hdr_phys_t	*hdr;
 	uint64_t		log_entries;
+	int			err;
 
 	ASSERT(!l2arc_vdev_present(vd));
 
@@ -9057,7 +9047,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * the calculated one do not rebuild L2ARC.
 	 */
 	mutex_enter(&l2arc_dev_mtx);
-	if (l2arc_dev_hdr_read(adddev) != 0) {
+	if ((err = l2arc_dev_hdr_read(adddev)) != 0) {
 		/* device header corrupted, start a new one */
 		bzero(hdr, adddev->l2ad_dev_hdr_asize);
 		rebuild = B_FALSE;
@@ -9082,7 +9072,17 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
 		adddev->l2ad_rebuild = B_TRUE;
+	} else if (err != 0 && spa_writeable(spa)) {
+		/*
+		 * If we are not rebuilding the L2ARC and if the header was
+		 * corrupted or non-existent, create a new one.
+		 * We cannot update the header of the device here if the L2ARC
+		 * is going to be rebuilt since dh_log_blk_count will be set to
+		 * 0.
+		 */
+		l2arc_dev_hdr_update(adddev);
 	}
+
 	mutex_exit(&l2arc_dev_mtx);
 }
 
@@ -9289,11 +9289,12 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	dev->l2ad_evict = dev->l2ad_dev_hdr->dh_evict;
-	dev->l2ad_hand = vdev_psize_to_asize(dev->l2ad_vdev,
+	dev->l2ad_evict = MAX(dev->l2ad_dev_hdr->dh_evict, dev->l2ad_start);
+	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
 	    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr +
 	    BLKPROP_GET_PSIZE(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop));
+	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop)),
+	    dev->l2ad_start);
 	dev->l2ad_first = !!(dev->l2ad_dev_hdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
 
@@ -9399,8 +9400,12 @@ out:
 		l2arc_log_blk_fetch_abort(next_io);
 	vmem_free(this_lb, sizeof (*this_lb));
 	vmem_free(next_lb, sizeof (*next_lb));
-	if (err == 0)
+	if (err == 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
+		zfs_dbgmsg("L2ARC successfully rebuilt");
+	} else {
+		zfs_dbgmsg("L2ARC not successfully rebuilt");
+	}
 
 	if (lock_held)
 		spa_config_exit(spa, SCL_L2ARC, vd);
@@ -9420,7 +9425,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	uint64_t		guid;
 	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
 	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
-	abd_t *abd;
+	abd_t 			*abd;
 
 	guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 
@@ -9433,8 +9438,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY |
 	    ZIO_FLAG_SPECULATIVE, B_FALSE));
 
-	if (abd != NULL)
-		abd_put(abd);
+	abd_put(abd);
 
 	if (err != 0 || hdr->dh_evict > dev->l2ad_end ||
 	    hdr->dh_evict < dev->l2ad_start) {
@@ -9746,12 +9750,11 @@ l2arc_log_blk_fetch_abort(zio_t *zio)
  * initiated as a child of `pio'.
  */
 static void
-l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
-    l2arc_write_callback_t *cb)
+l2arc_dev_hdr_update(l2arc_dev_t *dev)
 {
-	zio_t			*wzio;
 	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
 	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
+	abd_t			*abd;
 
 	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
 	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
@@ -9762,12 +9765,13 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev, zio_t *pio,
 	if (dev->l2ad_first)
 		hdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
 
-	cb->l2wcb_abd = abd_get_from_buf(hdr, hdr_asize);
-	wzio = zio_write_phys(pio, dev->l2ad_vdev, VDEV_LABEL_START_SIZE,
-	    hdr_asize, cb->l2wcb_abd, ZIO_CHECKSUM_LABEL,
-	    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
-	DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev, zio_t *, wzio);
-	(void) zio_nowait(wzio);
+	abd = abd_get_from_buf(hdr, hdr_asize);
+
+	(void) zio_wait(zio_write_phys(NULL, dev->l2ad_vdev,
+	    VDEV_LABEL_START_SIZE, hdr_asize, abd, ZIO_CHECKSUM_LABEL, NULL,
+	    NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE));
+
+	abd_put(abd);
 }
 
 /*

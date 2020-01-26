@@ -34,6 +34,7 @@
 #	5. Import pool.
 #	6. Read amount of log blocks built.
 #	7. Compare the two amounts
+#	8. Check if the labels of the L2ARC device are intact.
 #
 
 verify_runnable "global"
@@ -77,6 +78,8 @@ typeset log_blk_end=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must test $log_blk_start -eq $log_blk_end
+
+log_must zdb -lq $VDEV_CACHE
 
 log_must zpool destroy -f $TESTPOOL
 
