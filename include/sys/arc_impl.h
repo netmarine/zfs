@@ -394,7 +394,6 @@ typedef struct l2arc_buf_hdr {
 typedef struct l2arc_write_callback {
 	l2arc_dev_t	*l2wcb_dev;		/* device info */
 	arc_buf_hdr_t	*l2wcb_head;		/* head of write buflist */
-	abd_t		*l2wcb_abd;		/* abd for L2ARC dev header */
 	/* in-flight list of log blocks */
 	list_t		l2wcb_abd_list;
 } l2arc_write_callback_t;

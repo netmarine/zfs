@@ -37,14 +37,14 @@
 #		(4).
 #	8. Read the file written in (2) and check if l2_hits in
 #		/proc/spl/kstat/zfs/arcstats increased.
-#	9. Check if the labels of the L2ARC device is intact.
+#	9. Check if the labels of the L2ARC device are intact.
 #
 #	* We can predict the minimum bytes of L2ARC restored if we subtract
 #	from the effective size of the cache device the bytes l2arc_evict()
 #	evicts:
 #	l2: L2ARC device size - VDEV_LABEL_START_SIZE - l2ad_dev_hdr_asize
 #	wr_sz: l2arc_write_max + l2arc_write_boost (worst case)
-#	blk_overhead: wr_sz / SPA_MINBLOCKSHIFT / (l2 / SPA_MAXBLOCKSHIFT) *
+#	blk_overhead: wr_sz / SPA_MINBLOCKSIZE / (l2 / SPA_MAXBLOCKSIZE) *
 #		sizeof (l2arc_log_blk_phys_t)
 #	min restored size: l2 - 2 * (wr_sz + blk_overhead)
 #				^

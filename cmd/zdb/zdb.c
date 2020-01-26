@@ -2904,10 +2904,6 @@ print_label_header(zdb_label_t *label, int l)
 static void
 print_l2arc_header(void)
 {
-
-	if (dump_opt['q'])
-		return;
-
 	(void) printf("------------------------------------\n");
 	(void) printf("L2ARC device header\n");
 	(void) printf("------------------------------------\n");
@@ -3202,25 +3198,51 @@ dump_label(const char *dev)
 		}
 	}
 
-	boolean_t val = B_FALSE;
-	nvlist_lookup_boolean_value(labels[0].config_nv,
-	    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &val);
-	if (val) {
-		pread64(fd, &hdr, sizeof (hdr), VDEV_LABEL_START_SIZE);
-		(void) print_l2arc_header();
-		(void) printf("    dh_magic: %lu\n", hdr.dh_magic);
-		(void) printf("    dh_version: %lu\n", hdr.dh_version);
-		(void) printf("    dh_spa_guid: %lu\n", hdr.dh_spa_guid);
-		(void) printf("    dh_flags: %lu\n", hdr.dh_flags);
-		(void) printf("    dh_start_lbps[0]: %lu\n",
-		    hdr.dh_start_lbps[0].lbp_daddr);
-		(void) printf("    dh_start_lbps[1]: %lu\n",
-		    hdr.dh_start_lbps[1].lbp_daddr);
-		(void) printf("    dh_log_blk_count: %lu\n",
-		    hdr.dh_log_blk_count);
-		(void) printf("    dh_log_blk_ent: %lu\n", hdr.dh_log_blk_ent);
-		(void) printf("    dh_evict: %lu\n", hdr.dh_evict);
-		(void) printf("\n");
+	/*
+	 * Traverse all labels and search for l2cache_persistent.
+	 * If found, read and dump the L2ARC device header.
+	 */
+	boolean_t l2arc_header = B_FALSE;
+	for (int l = 0; l < VDEV_LABELS; l++) {
+		zdb_label_t *label = &labels[l];
+
+		if (label->read_failed == B_TRUE)
+			continue;
+
+		if (label->config_nv) {
+			nvlist_lookup_boolean_value(label->config_nv,
+			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &l2arc_header);
+
+			if (l2arc_header) {
+				pread64(fd, &hdr, sizeof (hdr),
+				    VDEV_LABEL_START_SIZE);
+				if (dump_opt['q'])
+					break;
+				(void) print_l2arc_header();
+				(void) printf("    dh_magic: %lu\n",
+				    hdr.dh_magic);
+				(void) printf("    dh_version: %lu\n",
+				    hdr.dh_version);
+				(void) printf("    dh_spa_guid: %lu\n",
+				    hdr.dh_spa_guid);
+				(void) printf("    dh_flags: %lu\n",
+				    hdr.dh_flags);
+				(void) printf("    dh_start_lbps[0]: %lu\n",
+				    hdr.dh_start_lbps[0].lbp_daddr);
+				(void) printf("    dh_start_lbps[1]: %lu\n",
+				    hdr.dh_start_lbps[1].lbp_daddr);
+				(void) printf("    dh_log_blk_count: %lu\n",
+				    hdr.dh_log_blk_count);
+				(void) printf("    dh_log_blk_ent: %lu\n",
+				    hdr.dh_log_blk_ent);
+				(void) printf("    dh_evict: %lu\n",
+				    hdr.dh_evict);
+				(void) printf("\n");
+				break;
+			} else {
+				continue;
+			}
+		}
 	}
 
 	/*
