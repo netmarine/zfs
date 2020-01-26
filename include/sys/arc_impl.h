@@ -212,7 +212,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 * Global L2ARC device state and metadata.
 	 */
 	uint64_t	dh_spa_guid;
-	uint64_t	dh_alloc_space;		/* vdev allocated bytes */
+	uint64_t	dh_log_blk_count;	/* allocated log blocks */
 	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
 
 	/*
@@ -353,6 +353,7 @@ typedef struct l2arc_dev {
 	uint64_t		l2ad_evict;	/* evicted offset in bytes */
 	/* list of pointers to log blocks present in the L2ARC device */
 	list_t			l2ad_lbptr_list;
+	zfs_refcount_t		l2ad_log_blk_count;  /* allocated log blocks */
 } l2arc_dev_t;
 
 /*

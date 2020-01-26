@@ -27,12 +27,17 @@
 #
 # STRATEGY:
 #	1. Create pool with a cache device.
-#	2. Create a random file in that pool and random read for 30 sec.
-#	3. Export pool.
-#	4. Import pool.
-#	5. Check in zpool iostat if the cache device has space* allocated.
-#	6. Read the file written in (2) and check if l2_hits in
+#	2. Export and re-import pool without writing any data.
+#	3. Create a random file in that pool and random read for 30 sec.
+#	4. Export pool.
+#	5. Read the amount of log blocks written from the header of the
+#		L2ARC device.
+#	6. Import pool.
+#	7. Read the amount of log blocks rebuild in arcstats and compare to
+#		(4).
+#	8. Read the file written in (2) and check if l2_hits in
 #		/proc/spl/kstat/zfs/arcstats increased.
+#	9. Check if the labels of the L2ARC device is intact.
 #
 #	* We can predict the minimum bytes of L2ARC restored if we subtract
 #	from the effective size of the cache device the bytes l2arc_evict()
@@ -77,14 +82,26 @@ log_must truncate -s ${cache_sz}M $VDEV_CACHE
 log_must zpool create -f $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
 
+log_must zpool export $TESTPOOL
+log_must zpool import -d $VDIR $TESTPOOL
+
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
+
+typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep dh_log_blk_count | \
+	awk '{print $2}')
+
+typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
+	| awk '{print $3}')
+
 log_must zpool import -d $VDIR $TESTPOOL
 
-log_must test "$(zpool iostat -Hpv $TESTPOOL $VDEV_CACHE | awk '{print $2}')" \
-	-gt 23702188
+typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
+	| awk '{print $3}')
+
+log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
 
 typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
@@ -97,6 +114,7 @@ typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 
 log_must test $l2_hits_end -gt $l2_hits_start
 
+log_must zdb -lq $VDEV_CACHE
 log_must zpool destroy -f $TESTPOOL
 
 log_pass "Persistent L2ARC with an unencrypted ZFS file system succeeds."
