@@ -8823,7 +8823,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	/*
 	 * If we have written log blocks update the L2ARC device header.
 	 * If log_entries = 0 also update the header here,
-	 * otherwise it will not be updated, leading to dh_errors.
+	 * otherwise it will not be updated.
 	 */
 	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
 		l2arc_dev_hdr_update(dev);
@@ -8984,7 +8984,6 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
 	l2arc_dev_t		*adddev;
 	l2arc_dev_hdr_phys_t	*hdr;
-	uint64_t		log_entries;
 	int			err;
 
 	ASSERT(!l2arc_vdev_present(vd));
@@ -9035,9 +9034,9 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * log entries per block so as to enable persistence.
 	 */
 	if (adddev->l2ad_end < l2arc_rebuild_blocks_min_size) {
-		log_entries = 0;
+		adddev->l2ad_log_entries = 0;
 	} else {
-		log_entries = MIN((adddev->l2ad_end -
+		adddev->l2ad_log_entries = MIN((adddev->l2ad_end -
 		    adddev->l2ad_start) >> SPA_MAXBLOCKSHIFT,
 		    L2ARC_LOG_BLK_MAX_ENTRIES);
 	}
@@ -9050,11 +9049,6 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	if ((err = l2arc_dev_hdr_read(adddev)) != 0) {
 		/* device header corrupted, start a new one */
 		bzero(hdr, adddev->l2ad_dev_hdr_asize);
-		rebuild = B_FALSE;
-	}
-
-	if (hdr->dh_log_blk_ent != log_entries) {
-		hdr->dh_log_blk_ent = log_entries;
 		rebuild = B_FALSE;
 	}
 
@@ -9440,8 +9434,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	abd_put(abd);
 
-	if (err != 0 || hdr->dh_evict > dev->l2ad_end ||
-	    hdr->dh_evict < dev->l2ad_start) {
+	if (err != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
 		return (err);
 	}
@@ -9450,7 +9443,10 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 		byteswap_uint64_array(hdr, sizeof (*hdr));
 
 	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid ||
-	    hdr->dh_version != L2ARC_PERSISTENT_VERSION) {
+	    hdr->dh_version != L2ARC_PERSISTENT_VERSION ||
+	    hdr->dh_log_blk_ent != dev->l2ad_log_entries ||
+	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
+	    hdr->dh_evict)) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
 		 * or containing a header from some other pool or from another
@@ -9760,6 +9756,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 	hdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
+	hdr->dh_log_blk_ent = dev->l2ad_log_entries;
 	hdr->dh_evict = dev->l2ad_evict;
 	hdr->dh_flags = 0;
 	if (dev->l2ad_first)
