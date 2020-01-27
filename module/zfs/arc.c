@@ -9677,7 +9677,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	bcopy(dev->l2ad_dev_hdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
 	/* Start the rebuild process */
-	for (int i = 0; i <= dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
+	for (int i = 0; i < dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
 		/*
 		 * If we hit an invalid block address end the rebuild. Also
 		 * protect against infinite loops of log blocks.
