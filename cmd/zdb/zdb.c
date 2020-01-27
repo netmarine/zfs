@@ -2910,6 +2910,56 @@ print_l2arc_header(void)
 }
 
 static void
+dump_l2arc_header(zdb_label_t *labels, int fd)
+{
+	boolean_t l2arc_header = B_FALSE;
+	l2arc_dev_hdr_phys_t hdr;
+
+	for (int l = 0; l < VDEV_LABELS; l++) {
+		zdb_label_t *label = labels + l;
+
+		if (label->read_failed == B_TRUE)
+			continue;
+
+		if (label->config_nv) {
+			nvlist_lookup_boolean_value(label->config_nv,
+			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &l2arc_header);
+
+			if (l2arc_header && pread64(fd, &hdr, sizeof (hdr),
+			    VDEV_LABEL_START_SIZE) == sizeof (hdr)) {
+				if (dump_opt['q'])
+					break;
+				(void) print_l2arc_header();
+				(void) printf("    dh_magic: %llu\n",
+				    (u_longlong_t)hdr.dh_magic);
+				(void) printf("    dh_version: %llu\n",
+				    (u_longlong_t)hdr.dh_version);
+				(void) printf("    dh_spa_guid: %llu\n",
+				    (u_longlong_t)hdr.dh_spa_guid);
+				(void) printf("    dh_flags: %llu\n",
+				    (u_longlong_t)hdr.dh_flags);
+				(void) printf("    dh_start_lbps[0]: %llu\n",
+				    (u_longlong_t)
+				    hdr.dh_start_lbps[0].lbp_daddr);
+				(void) printf("    dh_start_lbps[1]: %llu\n",
+				    (u_longlong_t)
+				    hdr.dh_start_lbps[1].lbp_daddr);
+				(void) printf("    dh_log_blk_count: %llu\n",
+				    (u_longlong_t)hdr.dh_log_blk_count);
+				(void) printf("    dh_log_blk_ent: %llu\n",
+				    (u_longlong_t)hdr.dh_log_blk_ent);
+				(void) printf("    dh_evict: %llu\n",
+				    (u_longlong_t)hdr.dh_evict);
+				(void) printf("\n");
+				break;
+			} else {
+				continue;
+			}
+		}
+	}
+}
+
+static void
 dump_config_from_label(zdb_label_t *label, size_t buflen, int l)
 {
 	if (dump_opt['q'])
@@ -3082,7 +3132,6 @@ dump_label(const char *dev)
 	avl_tree_t uberblock_tree;
 	void *node, *cookie;
 	int fd;
-	l2arc_dev_hdr_phys_t hdr;
 
 	bzero(labels, sizeof (labels));
 
@@ -3202,50 +3251,7 @@ dump_label(const char *dev)
 	 * Traverse all labels and search for l2cache_persistent.
 	 * If found, read and dump the L2ARC device header.
 	 */
-	boolean_t l2arc_header = B_FALSE;
-	for (int l = 0; l < VDEV_LABELS; l++) {
-		zdb_label_t *label = &labels[l];
-
-		if (label->read_failed == B_TRUE)
-			continue;
-
-		if (label->config_nv) {
-			nvlist_lookup_boolean_value(label->config_nv,
-			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &l2arc_header);
-
-			if (l2arc_header) {
-				(void) pread64(fd, &hdr, sizeof (hdr),
-				    VDEV_LABEL_START_SIZE);
-				if (dump_opt['q'])
-					break;
-				(void) print_l2arc_header();
-				(void) printf("    dh_magic: %llu\n",
-				    (u_longlong_t)hdr.dh_magic);
-				(void) printf("    dh_version: %llu\n",
-				    (u_longlong_t)hdr.dh_version);
-				(void) printf("    dh_spa_guid: %llu\n",
-				    (u_longlong_t)hdr.dh_spa_guid);
-				(void) printf("    dh_flags: %llu\n",
-				    (u_longlong_t)hdr.dh_flags);
-				(void) printf("    dh_start_lbps[0]: %llu\n",
-				    (u_longlong_t)
-				    hdr.dh_start_lbps[0].lbp_daddr);
-				(void) printf("    dh_start_lbps[1]: %llu\n",
-				    (u_longlong_t)
-				    hdr.dh_start_lbps[1].lbp_daddr);
-				(void) printf("    dh_log_blk_count: %llu\n",
-				    (u_longlong_t)hdr.dh_log_blk_count);
-				(void) printf("    dh_log_blk_ent: %llu\n",
-				    (u_longlong_t)hdr.dh_log_blk_ent);
-				(void) printf("    dh_evict: %llu\n",
-				    (u_longlong_t)hdr.dh_evict);
-				(void) printf("\n");
-				break;
-			} else {
-				continue;
-			}
-		}
-	}
+	dump_l2arc_header(labels, fd);
 
 	/*
 	 * Dump the label and uberblocks.
