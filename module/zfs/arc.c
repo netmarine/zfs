@@ -8686,6 +8686,8 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
+	taddr = MAX(dev->l2ad_dev_hdr->dh_evict, taddr);
+
 	/*
 	 * Trim the space to be evicted. Check that we do not evict the whole
 	 * device and that it has trim.
@@ -8704,8 +8706,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 			    VDEV_LABEL_START_SIZE,
 			    taddr - vd->vdev_trim_last_offset,
 			    TRIM_TYPE_AUTO);
-			vd->vdev_trim_last_offset = MAX(taddr,
-			    dev->l2ad_dev_hdr->dh_evict;);
+			vd->vdev_trim_last_offset = taddr;
 		}
 	}
 
@@ -9186,7 +9187,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		 * Although we did not write any buffers, vdev_trim_last_offset
 		 * may still have advanced. Update the L2ARC device header.
 		 */
-		if (dev->l2ad_evict > dev->l2ad_dev_hdr->dh_evict)
+		if (dev->l2ad_vdev->vdev_trim_last_offset >
+		    dev->l2ad_dev_hdr->dh_evict)
 			l2arc_dev_hdr_update(dev);
 
 		return (0);
