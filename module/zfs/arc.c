@@ -9304,6 +9304,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]) ||
 		    l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
 		    lb_ptrs[0].lbp_daddr, dev->l2ad_hand)) {
+			if (this_io != NULL)
+				l2arc_log_blk_fetch_abort(this_io);
 			break;
 		}
 
@@ -9388,8 +9390,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		}
 	}
 out:
-	if (this_io != NULL)
-		l2arc_log_blk_fetch_abort(this_io);
 	if (next_io != NULL)
 		l2arc_log_blk_fetch_abort(next_io);
 	vmem_free(this_lb, sizeof (*this_lb));
