@@ -2929,7 +2929,7 @@ dump_l2arc_header(zdb_label_t *labels, int fd)
 			    VDEV_LABEL_START_SIZE) == sizeof (hdr)) {
 				if (dump_opt['q'])
 					break;
-				(void) print_l2arc_header();
+				print_l2arc_header();
 				(void) printf("    dh_magic: %llu\n",
 				    (u_longlong_t)hdr.dh_magic);
 				(void) printf("    dh_version: %llu\n",
