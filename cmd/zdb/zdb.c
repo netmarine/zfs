@@ -3788,7 +3788,7 @@ dump_label(const char *dev)
 			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &l2arc_header);
 
 			if (l2arc_header) {
-				pread64(fd, &hdr, sizeof (hdr),
+				(void) pread64(fd, &hdr, sizeof (hdr),
 				    VDEV_LABEL_START_SIZE);
 				if (dump_opt['q'])
 					break;
