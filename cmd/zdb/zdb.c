@@ -3219,24 +3219,26 @@ dump_label(const char *dev)
 				if (dump_opt['q'])
 					break;
 				(void) print_l2arc_header();
-				(void) printf("    dh_magic: %lu\n",
-				    hdr.dh_magic);
-				(void) printf("    dh_version: %lu\n",
-				    hdr.dh_version);
-				(void) printf("    dh_spa_guid: %lu\n",
-				    hdr.dh_spa_guid);
-				(void) printf("    dh_flags: %lu\n",
-				    hdr.dh_flags);
-				(void) printf("    dh_start_lbps[0]: %lu\n",
+				(void) printf("    dh_magic: %llu\n",
+				    (u_longlong_t)hdr.dh_magic);
+				(void) printf("    dh_version: %llu\n",
+				    (u_longlong_t)hdr.dh_version);
+				(void) printf("    dh_spa_guid: %llu\n",
+				    (u_longlong_t)hdr.dh_spa_guid);
+				(void) printf("    dh_flags: %llu\n",
+				    (u_longlong_t)hdr.dh_flags);
+				(void) printf("    dh_start_lbps[0]: %llu\n",
+				    (u_longlong_t)
 				    hdr.dh_start_lbps[0].lbp_daddr);
-				(void) printf("    dh_start_lbps[1]: %lu\n",
+				(void) printf("    dh_start_lbps[1]: %llu\n",
+				    (u_longlong_t)
 				    hdr.dh_start_lbps[1].lbp_daddr);
-				(void) printf("    dh_log_blk_count: %lu\n",
-				    hdr.dh_log_blk_count);
-				(void) printf("    dh_log_blk_ent: %lu\n",
-				    hdr.dh_log_blk_ent);
-				(void) printf("    dh_evict: %lu\n",
-				    hdr.dh_evict);
+				(void) printf("    dh_log_blk_count: %llu\n",
+				    (u_longlong_t)hdr.dh_log_blk_count);
+				(void) printf("    dh_log_blk_ent: %llu\n",
+				    (u_longlong_t)hdr.dh_log_blk_ent);
+				(void) printf("    dh_evict: %llu\n",
+				    (u_longlong_t)hdr.dh_evict);
 				(void) printf("\n");
 				break;
 			} else {
