@@ -3495,6 +3495,10 @@ dump_l2arc_header(int fd)
 			byteswap_uint64_array(&hdr, sizeof (hdr));
 
 		if (hdr.dh_magic == L2ARC_DEV_HDR_MAGIC) {
+
+			if (dump_opt['q'])
+				return;
+
 			print_l2arc_header();
 			(void) printf("    magic: %llu\n",
 			    (u_longlong_t)hdr.dh_magic);
