@@ -9819,7 +9819,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	if (err != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
 		zfs_dbgmsg("L2ARC IO error (%d) while reading device header "
-		    "on vdev guid %llu", dev->l2ad_vdev->vdev_guid, err);
+		    "on vdev guid %llu", err, dev->l2ad_vdev->vdev_guid);
 		return (err);
 	}
 
