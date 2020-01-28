@@ -8825,7 +8825,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * If log_entries = 0 also update the header here,
 	 * otherwise it will not be updated.
 	 */
-	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0)
+	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0 ||
+	    dev->l2ad_evict > dev->l2ad_dev_hdr->dh_evict)
 		l2arc_dev_hdr_update(dev);
 
 	/*
