@@ -2910,51 +2910,39 @@ print_l2arc_header(void)
 }
 
 static void
-dump_l2arc_header(zdb_label_t *labels, int fd)
+dump_l2arc_header(int fd)
 {
-	boolean_t l2arc_header = B_FALSE;
 	l2arc_dev_hdr_phys_t hdr;
 
-	for (int l = 0; l < VDEV_LABELS; l++) {
-		zdb_label_t *label = labels + l;
+	if (pread64(fd, &hdr, sizeof (hdr),
+	    VDEV_LABEL_START_SIZE) == sizeof (hdr)) {
 
-		if (label->read_failed == B_TRUE)
-			continue;
+		if (hdr.dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
+			byteswap_uint64_array(&hdr, sizeof (hdr));
 
-		if (label->config_nv) {
-			nvlist_lookup_boolean_value(label->config_nv,
-			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, &l2arc_header);
-
-			if (l2arc_header && pread64(fd, &hdr, sizeof (hdr),
-			    VDEV_LABEL_START_SIZE) == sizeof (hdr)) {
-				if (dump_opt['q'])
-					break;
-				print_l2arc_header();
-				(void) printf("    dh_magic: %llu\n",
-				    (u_longlong_t)hdr.dh_magic);
-				(void) printf("    dh_version: %llu\n",
-				    (u_longlong_t)hdr.dh_version);
-				(void) printf("    dh_spa_guid: %llu\n",
-				    (u_longlong_t)hdr.dh_spa_guid);
-				(void) printf("    dh_flags: %llu\n",
-				    (u_longlong_t)hdr.dh_flags);
-				(void) printf("    dh_start_lbps[0]: %llu\n",
-				    (u_longlong_t)
-				    hdr.dh_start_lbps[0].lbp_daddr);
-				(void) printf("    dh_start_lbps[1]: %llu\n",
-				    (u_longlong_t)
-				    hdr.dh_start_lbps[1].lbp_daddr);
-				(void) printf("    dh_log_blk_count: %llu\n",
-				    (u_longlong_t)hdr.dh_log_blk_count);
-				(void) printf("    dh_log_blk_ent: %llu\n",
-				    (u_longlong_t)hdr.dh_log_blk_ent);
-				(void) printf("    dh_evict: %llu\n",
-				    (u_longlong_t)hdr.dh_evict);
-				(void) printf("\n");
-				break;
-			} else {
-				continue;
-			}
+		if (hdr.dh_magic == L2ARC_DEV_HDR_MAGIC) {
+			print_l2arc_header();
+			(void) printf("    magic: %llu\n",
+			    (u_longlong_t)hdr.dh_magic);
+			(void) printf("    version: %llu\n",
+			    (u_longlong_t)hdr.dh_version);
+			(void) printf("    pool_guid: %llu\n",
+			    (u_longlong_t)hdr.dh_spa_guid);
+			(void) printf("    flags: %llu\n",
+			    (u_longlong_t)hdr.dh_flags);
+			(void) printf("    start_lbps[0]: %llu\n",
+			    (u_longlong_t)
+			    hdr.dh_start_lbps[0].lbp_daddr);
+			(void) printf("    start_lbps[1]: %llu\n",
+			    (u_longlong_t)
+			    hdr.dh_start_lbps[1].lbp_daddr);
+			(void) printf("    log_blk_count: %llu\n",
+			    (u_longlong_t)hdr.dh_log_blk_count);
+			(void) printf("    log_blk_ent: %llu\n",
+			    (u_longlong_t)hdr.dh_log_blk_ent);
+			(void) printf("    evict: %llu\n",
+			    (u_longlong_t)hdr.dh_evict);
+			(void) printf("\n");
 		}
 	}
 }
@@ -3248,10 +3236,9 @@ dump_label(const char *dev)
 	}
 
 	/*
-	 * Traverse all labels and search for l2cache_persistent.
-	 * If found, read and dump the L2ARC device header.
+	 * Dump the L2ARC header, if existent.
 	 */
-	dump_l2arc_header(labels, fd);
+	dump_l2arc_header(fd);
 
 	/*
 	 * Dump the label and uberblocks.

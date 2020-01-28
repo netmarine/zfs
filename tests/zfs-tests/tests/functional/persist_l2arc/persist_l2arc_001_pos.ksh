@@ -91,7 +91,7 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 
-typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep dh_log_blk_count | \
+typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
 
 typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
