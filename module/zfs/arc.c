@@ -9920,12 +9920,10 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	    BLKPROP_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
-		zfs_dbgmsg("log block cksum failed at address: %llu",
-		    this_lbp->lbp_daddr);
-		zfs_dbgmsg("L2ARC vdev guid: %llu", dev->l2ad_vdev->vdev_guid);
-		zfs_dbgmsg("L2ARC write hand: %llu", dev->l2ad_hand);
-		zfs_dbgmsg("L2ARC evict hand: %llu",
-		    dev->l2ad_vdev->vdev_trim_last_offset);
+		zfs_dbgmsg("log block cksum failed at address %llu on vdev "
+		    "guid %llu with write hand at %llu and evict hand at "
+		    "%llyu", this_lbp->lbp_daddr, dev->l2ad_vdev->vdev_guid,
+		    dev->l2ad_hand, dev->l2ad_vdev->vdev_trim_last_offset);
 		err = SET_ERROR(EINVAL);
 		goto cleanup;
 	}
