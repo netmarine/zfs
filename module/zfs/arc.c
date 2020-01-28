@@ -9297,21 +9297,9 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 	/* Start the rebuild process */
 	for (int i = 0; i < dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
-		/*
-		 * If we hit an invalid block address end the rebuild. Also
-		 * protect against infinite loops of log blocks.
-		 */
-		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]) ||
-		    l2arc_range_check_overlap(lb_ptrs[1].lbp_daddr,
-		    lb_ptrs[0].lbp_daddr, dev->l2ad_hand)) {
-			if (this_io != NULL)
-				l2arc_log_blk_fetch_abort(this_io);
-			break;
-		}
-
 		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
 		    this_lb, next_lb, this_io, &next_io)) != 0)
-			break;
+			goto out;
 
 		spa_config_exit(spa, SCL_L2ARC, vd);
 		lock_held = B_FALSE;
@@ -9330,7 +9318,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			cmn_err(CE_NOTE, "System running low on memory, "
 			    "aborting L2ARC rebuild.");
 			err = SET_ERROR(ENOMEM);
-			break;
+			goto out;
 		}
 
 		/*
@@ -9345,8 +9333,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 		/*
 		 * log blk restored, include its pointer in the list of pointers
-		 * to log blocks present in the L2ARC device, and continue with
-		 * the next one in the list.
+		 * to log blocks present in the L2ARC device.
 		 */
 		lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
 		lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t),
@@ -9359,12 +9346,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 		vdev_space_update(vd,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
-
-		lb_ptrs[0] = lb_ptrs[1];
-		lb_ptrs[1] = this_lb->lb_prev_lbp;
-		PTR_SWAP(this_lb, next_lb);
-		this_io = next_io;
-		next_io = NULL;
 
 		for (;;) {
 			if (dev->l2ad_rebuild_cancel) {
@@ -9389,7 +9370,19 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			 */
 			delay(1);
 		}
+
+		/*
+		 * Continue with the next log blk.
+		 */
+		lb_ptrs[0] = lb_ptrs[1];
+		lb_ptrs[1] = this_lb->lb_prev_lbp;
+		PTR_SWAP(this_lb, next_lb);
+		this_io = next_io;
+		next_io = NULL;
 	}
+
+	if (this_io != NULL)
+		l2arc_log_blk_fetch_abort(this_io);
 out:
 	if (next_io != NULL)
 		l2arc_log_blk_fetch_abort(next_io);
