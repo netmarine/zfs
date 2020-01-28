@@ -895,7 +895,7 @@ static void l2arc_log_blk_fetch_abort(zio_t *zio);
 
 /* L2ARC persistence block restoration routines. */
 static void l2arc_log_blk_restore(l2arc_dev_t *dev,
-    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize);
+    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize, uint64_t lb_daddr);
 static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
     l2arc_dev_t *dev);
 
@@ -9340,7 +9340,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * buffers.
 		 */
 		l2arc_log_blk_restore(dev, this_lb,
-		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
+		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
+		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_daddr));
 
 		/*
 		 * log blk restored, include its pointer in the list of pointers
@@ -9436,6 +9437,8 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	if (err != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
+		zfs_dbgmsg("IO error while reading L2ARC device header on "
+		    "vdev guid %llu: %d", dev->l2ad_vdev->vdev_guid, err);
 		return (err);
 	}
 
@@ -9525,6 +9528,10 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	/* Wait for the IO to read this log block to complete */
 	if ((err = zio_wait(this_io)) != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
+		zfs_dbgmsg("IO error while reading log blk at address %llu: %d",
+		    this_lbp->lbp_daddr, err);
+		zfs_dbgmsg("IO error L2ARC vdev guid: %llu",
+		    dev->l2ad_vdev->vdev_guid);
 		goto cleanup;
 	}
 
@@ -9533,6 +9540,11 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	    BLKPROP_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
+		zfs_dbgmsg("log block cksum failed at address: %llu",
+		    this_lbp->lbp_daddr);
+		zfs_dbgmsg("L2ARC vdev guid: %llu", dev->l2ad_vdev->vdev_guid);
+		zfs_dbgmsg("L2ARC write hand: %llu", dev->l2ad_hand);
+		zfs_dbgmsg("L2ARC evict hand: %llu", dev->l2ad_evict);
 		err = SET_ERROR(EINVAL);
 		goto cleanup;
 	}
@@ -9583,7 +9595,7 @@ cleanup:
  */
 static void
 l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
-    uint64_t lb_psize)
+    uint64_t lb_psize, uint64_t lb_daddr)
 {
 	uint64_t	size = 0, psize = 0;
 	uint64_t	log_entries = dev->l2ad_dev_hdr->dh_log_blk_ent;
@@ -9600,6 +9612,12 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 		if (!ZIO_CHECKSUM_EQUAL(cksum,
 		    (&lb->lb_entries[i])->le_cksum)) {
 			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_le_errors);
+			zfs_dbgmsg("log block entry cksum failed at address: "
+			    "%llu", lb_daddr);
+			zfs_dbgmsg("L2ARC vdev guid: %llu",
+			    dev->l2ad_vdev->vdev_guid);
+			zfs_dbgmsg("L2ARC write hand: %llu", dev->l2ad_hand);
+			zfs_dbgmsg("L2ARC evict hand: %llu", dev->l2ad_evict);
 			cksum_failed++;
 			continue;
 		}
