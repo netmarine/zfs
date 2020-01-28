@@ -9818,8 +9818,8 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	if (err != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_dh_errors);
-		zfs_dbgmsg("IO error while reading L2ARC device header on "
-		    "vdev guid %llu: %d", dev->l2ad_vdev->vdev_guid, err);
+		zfs_dbgmsg("L2ARC IO error (%d) while reading device header "
+		    "on vdev guid %llu", dev->l2ad_vdev->vdev_guid, err);
 		return (err);
 	}
 
@@ -9909,9 +9909,8 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	/* Wait for the IO to read this log block to complete */
 	if ((err = zio_wait(this_io)) != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
-		zfs_dbgmsg("IO error while reading log blk at address %llu: %d",
-		    this_lbp->lbp_daddr, err);
-		zfs_dbgmsg("IO error L2ARC vdev guid: %llu",
+		zfs_dbgmsg("L2ARC IO error (%d) while reading log blk at "
+		    "address %llu on vdev guid %llu", err, this_lbp->lbp_daddr,
 		    dev->l2ad_vdev->vdev_guid);
 		goto cleanup;
 	}
@@ -9925,7 +9924,8 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 		    this_lbp->lbp_daddr);
 		zfs_dbgmsg("L2ARC vdev guid: %llu", dev->l2ad_vdev->vdev_guid);
 		zfs_dbgmsg("L2ARC write hand: %llu", dev->l2ad_hand);
-		zfs_dbgmsg("L2ARC evict hand: %llu", dev->l2ad_evict);
+		zfs_dbgmsg("L2ARC evict hand: %llu",
+		    dev->l2ad_vdev->vdev_trim_last_offset);
 		err = SET_ERROR(EINVAL);
 		goto cleanup;
 	}
@@ -9993,12 +9993,11 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 		if (!ZIO_CHECKSUM_EQUAL(cksum,
 		    (&lb->lb_entries[i])->le_cksum)) {
 			ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_le_errors);
-			zfs_dbgmsg("log block entry cksum failed at address: "
-			    "%llu", lb_daddr);
-			zfs_dbgmsg("L2ARC vdev guid: %llu",
-			    dev->l2ad_vdev->vdev_guid);
-			zfs_dbgmsg("L2ARC write hand: %llu", dev->l2ad_hand);
-			zfs_dbgmsg("L2ARC evict hand: %llu", dev->l2ad_evict);
+			zfs_dbgmsg("L2ARC log block entry cksum failed at "
+			    "address %llu on vdev guid %llu with write hand "
+			    "at %llu and evict hand at %llu", lb_daddr,
+			    dev->l2ad_vdev->vdev_guid, dev->l2ad_hand,
+			    dev->l2ad_vdev->vdev_trim_last_offset);
 			cksum_failed++;
 			continue;
 		}
