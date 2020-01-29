@@ -171,3 +171,8 @@ tests = ['xattr_001_pos', 'xattr_002_neg', 'xattr_003_neg', 'xattr_004_pos',
     'xattr_009_neg', 'xattr_010_neg', 'xattr_011_pos', 'xattr_012_pos',
     'xattr_013_pos']
 tags = ['functional', 'xattr']
+
+[tests/functional/persist_l2arc:Linux]
+tests = ['persist_l2arc_001_pos', 'persist_l2arc_002_pos',
+    'persist_l2arc_003_neg', 'persist_l2arc_004_pos', 'persist_l2arc_005_pos']
+tags = ['functional', 'persist_l2arc']
