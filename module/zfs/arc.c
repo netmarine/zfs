@@ -8343,11 +8343,9 @@ top:
 		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
 
 		if (!all && !l2arc_range_check_overlap(dev->l2ad_hand,
-		    dev->l2ad_evict, lb_ptr_daddr))
-			break;
-
-		if (all || l2arc_range_check_overlap(dev->l2ad_hand,
 		    dev->l2ad_evict, lb_ptr_daddr)) {
+			break;
+		} else {
 			vdev_space_update(dev->l2ad_vdev,
 			    -BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop),
 			    0, 0);
