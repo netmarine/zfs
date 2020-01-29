@@ -9776,6 +9776,27 @@ out:
 		zfs_dbgmsg("L2ARC not successfully rebuilt");
 	}
 
+	/*
+	 * If l2ad_hand is at the end of the device with no space
+	 * left to accommodate upcoming writes, we reset it to l2ad_start,
+	 * like l2arc_write_buffers() does.
+	 */
+	if (dev->l2ad_hand + l2arc_write_size() +
+	    l2arc_log_blk_overhead(l2arc_write_size(), dev) >=
+	    dev->l2ad_end) {
+		/*
+		 * If vdev_trim_last_offset was after l2ad_hand reset it too.
+		 */
+		if (dev->l2ad_hand < dev->l2ad_vdev->vdev_trim_last_offset) {
+			dev->l2ad_vdev->vdev_trim_last_offset =
+			    dev->l2ad_start;
+			dev->l2ad_dev_hdr->dh_evict = dev->l2ad_start;
+		}
+
+		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_first = B_FALSE;
+	}
+
 	if (lock_held)
 		spa_config_exit(spa, SCL_L2ARC, vd);
 
@@ -10285,13 +10306,9 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 * - it has a valid size
 	 * - it was not trimmed by l2arc_evict()
 	 */
-	if (dev->l2ad_vdev->vdev_trim_last_offset > dev->l2ad_hand) {
-		trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
-		    dev->l2ad_vdev->vdev_trim_last_offset,
-		    lbp->lbp_daddr);
-	} else {
-		trimmed = B_FALSE;
-	}
+	trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
+	    dev->l2ad_vdev->vdev_trim_last_offset,
+	    lbp->lbp_daddr);
 
 	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
 	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) && !trimmed);
