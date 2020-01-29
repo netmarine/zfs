@@ -102,11 +102,6 @@ typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 
-typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
-	| awk '{print $3}')
-
-log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
-
 typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
@@ -115,6 +110,11 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 
 typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
+
+typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
+	| awk '{print $3}')
+
+log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
 
 log_must test $l2_hits_end -gt $l2_hits_start
 
