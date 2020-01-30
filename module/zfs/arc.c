@@ -9625,17 +9625,13 @@ l2arc_dev_rebuild_start(l2arc_dev_t *dev)
 
 /*
  * This function implements the actual L2ARC metadata rebuild. It:
- *
- * 1) reads the device's header
- * 2) if a good device header is found, starts reading the log block chain
- * 3) restores each block's contents to memory (reconstructing arc_buf_hdr_t's)
+ * starts reading the log block chain and restores each block's contents
+ * to memory (reconstructing arc_buf_hdr_t's).
  *
  * Operation stops under any of the following conditions:
  *
- * 1) We reach the end of the log blk chain (the back-reference in the blk is
- *    invalid or loops over our starting point).
- * 2) We encounter *any* error condition (cksum errors, io errors, looped
- *    blocks, etc.).
+ * 1) We reach the end of the log block chain.
+ * 2) We encounter *any* error condition (cksum errors, io errors)
  */
 static int
 l2arc_rebuild(l2arc_dev_t *dev)
@@ -9690,7 +9686,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * on memory, rather than swamping memory with new ARC buf
 		 * hdrs, we opt not to rebuild the L2ARC. At this point,
 		 * however, we have already set up our L2ARC dev to chain in
-		 * new metadata log blk, so the user may choose to re-add the
+		 * new metadata log block, so the user may choose to re-add the
 		 * L2ARC dev at a later time to reconstruct it (when there's
 		 * less memory pressure).
 		 */
@@ -9704,17 +9700,15 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 		/*
 		 * Now that we know that the next_lb checks out alright, we
-		 * can start reconstruction from this lb - we can be sure
-		 * that the L2ARC write hand has not yet reached any of our
-		 * buffers.
+		 * can start reconstruction from this log block.
 		 */
 		l2arc_log_blk_restore(dev, this_lb,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_daddr));
 
 		/*
-		 * log blk restored, include its pointer in the list of pointers
-		 * to log blocks present in the L2ARC device.
+		 * log blok restored, include its pointer in the list of
+		 * pointers to log blocks present in the L2ARC device.
 		 */
 		lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
 		lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t),
@@ -9753,7 +9747,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		}
 
 		/*
-		 * Continue with the next log blk.
+		 * Continue with the next log block.
 		 */
 		lb_ptrs[0] = lb_ptrs[1];
 		lb_ptrs[1] = this_lb->lb_prev_lbp;
@@ -9864,7 +9858,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
  * we're processing one buffer the L2ARC is already fetching the next
  * one in the chain.
  *
- * The arguments this_lp and next_lp point to the current and next log blk
+ * The arguments this_lp and next_lp point to the current and next log block
  * address in the block chain. Similarly, this_lb and next_lb hold the
  * l2arc_log_blk_phys_t's of the current and next L2ARC blk.
  *
@@ -9899,7 +9893,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	ASSERT(l2arc_log_blkptr_valid(dev, this_lbp));
 
 	/*
-	 * Check to see if we have issued the IO for this log blk in a
+	 * Check to see if we have issued the IO for this log block in a
 	 * previous run. If not, this is the first call, so issue it now.
 	 */
 	if (this_io == NULL) {
@@ -9912,9 +9906,9 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	 */
 	if (l2arc_log_blkptr_valid(dev, next_lbp)) {
 		/*
-		 * Start issuing IO for the next log blk early - this
+		 * Start issuing IO for the next log block early - this
 		 * should help keep the L2ARC device busy while we
-		 * decompress and restore this log blk.
+		 * decompress and restore this log block.
 		 */
 		*next_io = l2arc_log_blk_fetch(dev->l2ad_vdev, next_lbp,
 		    next_lb);
@@ -9923,7 +9917,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	/* Wait for the IO to read this log block to complete */
 	if ((err = zio_wait(this_io)) != 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
-		zfs_dbgmsg("L2ARC IO error (%d) while reading log blk, "
+		zfs_dbgmsg("L2ARC IO error (%d) while reading log block, "
 		    "offset: %llu, vdev guid: %llu", err, this_lbp->lbp_daddr,
 		    dev->l2ad_vdev->vdev_guid);
 		goto cleanup;
@@ -9981,7 +9975,7 @@ cleanup:
 }
 
 /*
- * Restores the payload of a log blk to ARC. This creates empty ARC hdr
+ * Restores the payload of a log block to ARC. This creates empty ARC hdr
  * entries which only contain an l2arc hdr, essentially restoring the
  * buffers to their L2ARC evicted state. This function also updates space
  * usage on the L2ARC vdev to make sure it tracks restored buffers.
@@ -10220,7 +10214,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	ASSERT(asize <= sizeof (*lb));
 
 	/*
-	 * Update the start log blk pointer in the device header to point
+	 * Update the start log block pointer in the device header to point
 	 * to the log block we're about to write.
 	 */
 	dev->l2ad_dev_hdr->dh_start_lbps[1] =
@@ -10289,7 +10283,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 }
 
 /*
- * Validates an L2ARC log blk address to make sure that it can be read
+ * Validates an L2ARC log block address to make sure that it can be read
  * from the provided L2ARC device. Returns B_TRUE if the address is
  * within the device's bounds, or B_FALSE if not.
  */
@@ -10315,9 +10309,9 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 }
 
 /*
- * Inserts ARC buffer header `hdr' into the current L2ARC log blk on
+ * Inserts ARC buffer header `hdr' into the current L2ARC log block on
  * the device. The buffer being inserted must be present in L2ARC.
- * Returns B_TRUE if the L2ARC log blk is full and needs to be committed
+ * Returns B_TRUE if the L2ARC log block is full and needs to be committed
  * to L2ARC, or B_FALSE if it still has room for more ARC buffers.
  */
 static boolean_t
