@@ -7957,8 +7957,8 @@ top:
 			lb_ptr_buf = list_remove_head(&dev->l2ad_lbptr_list);
 			zfs_refcount_remove(&dev->l2ad_log_blk_count,
 			    lb_ptr_buf);
-			bytes_dropped += vdev_psize_to_asize(dev->l2ad_vdev,
-			    BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop));
+			bytes_dropped +=
+			    BLKPROP_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
 			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
@@ -8997,7 +8997,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_dev_hdr_asize = MAX(sizeof (*adddev->l2ad_dev_hdr),
 	    1 << vd->vdev_ashift);
 	adddev->l2ad_start = VDEV_LABEL_START_SIZE + adddev->l2ad_dev_hdr_asize;
-	adddev->l2ad_end = vdev_get_min_asize(vd);
+	adddev->l2ad_end = VDEV_LABEL_START_SIZE + vdev_get_min_asize(vd);
 	ASSERT3U(adddev->l2ad_start, <, adddev->l2ad_end);
 	adddev->l2ad_hand = adddev->l2ad_start;
 	adddev->l2ad_evict = adddev->l2ad_start;
@@ -9292,6 +9292,19 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 	/* Start the rebuild process */
 	for (int i = 0; i < dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
+		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0])) {
+			zfs_dbgmsg("L2ARC log block pointer invalid, "
+			    "offset: %llu, vdev guid: %llu, l2ad_start: %llu, "
+			    "l2ad_end: %llu, l2ad_hand: %llu, "
+			    "l2ad_evict: %llu, l2ad_first: %d, lbp_psize: %llu",
+			    lb_ptrs[0].lbp_daddr, dev->l2ad_vdev->vdev_guid,
+			    dev->l2ad_start, dev->l2ad_end, dev->l2ad_hand,
+			    dev->l2ad_evict, dev->l2ad_first,
+			    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
+			err = SET_ERROR(EINVAL);
+			break;
+		}
+
 		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
 		    this_lb, next_lb, this_io, &next_io)) != 0)
 			goto out;
@@ -9322,10 +9335,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 */
 		l2arc_log_blk_restore(dev, this_lb,
 		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
-		    BLKPROP_GET_PSIZE((&lb_ptrs[0])->lbp_daddr));
+		    lb_ptrs[0].lbp_daddr);
 
 		/*
-		 * log blok restored, include its pointer in the list of
+		 * log block restored, include its pointer in the list of
 		 * pointers to log blocks present in the L2ARC device.
 		 */
 		lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
@@ -9387,6 +9400,8 @@ out:
 	} else {
 		zfs_dbgmsg("L2ARC not successfully rebuilt");
 	}
+
+	l2arc_dev_hdr_update(dev);
 
 	/*
 	 * If l2ad_hand is at the end of the device with no space
@@ -9549,7 +9564,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 		    "vdev guid: %llu, l2ad_hand: %llu, l2ad_evict: %llu",
 		    this_lbp->lbp_daddr, dev->l2ad_vdev->vdev_guid,
 		    dev->l2ad_hand, dev->l2ad_evict);
-		err = SET_ERROR(EINVAL);
+		err = SET_ERROR(ECKSUM);
 		goto cleanup;
 	}
 
@@ -9739,7 +9754,7 @@ l2arc_log_blk_fetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
 
 	psize = BLKPROP_GET_PSIZE((lbp)->lbp_prop);
 	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
-	cb = kmem_alloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
+	cb = kmem_zalloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
 	cb->l2rcb_abd = abd_get_from_buf(lb, psize);
 	pio = zio_root(vd->vdev_spa, l2arc_blk_fetch_done, cb,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
