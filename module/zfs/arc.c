@@ -10172,6 +10172,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
 	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
 	abd_t			*abd;
+	int			err;
 
 	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
 	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
@@ -10185,11 +10186,16 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 
 	abd = abd_get_from_buf(hdr, hdr_asize);
 
-	(void) zio_wait(zio_write_phys(NULL, dev->l2ad_vdev,
+	err = zio_wait(zio_write_phys(NULL, dev->l2ad_vdev,
 	    VDEV_LABEL_START_SIZE, hdr_asize, abd, ZIO_CHECKSUM_LABEL, NULL,
 	    NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE));
 
 	abd_put(abd);
+
+	if (err != 0) {
+		zfs_dbgmsg("L2ARC IO error (%d) while writing device header, "
+		    "vdev guid: %llu", err, dev->l2ad_vdev->vdev_guid);
+	}
 }
 
 /*
