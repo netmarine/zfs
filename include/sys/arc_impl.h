@@ -699,17 +699,17 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_hdr_size;
 	/*
 	 * Number of L2ARC log blocks written. These are used for restoring the
-	 * L2ARC.
-	 * Updated during writing of L2ARC log blocks.
+	 * L2ARC. Updated during writing of L2ARC log blocks.
 	 */
 	kstat_named_t arcstat_l2_log_blk_writes;
 	/*
-	 * Moving average of the size of the L2ARC log blocks, in bytes.
-	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
+	 * Moving average of the physical size of the L2ARC log blocks, in
+	 * bytes. Updated during L2ARC rebuild and during writing of L2ARC
+	 * log blocks.
 	 */
 	kstat_named_t arcstat_l2_log_blk_avg_size;
 	/*
-	 * Moving average of the physical size of L2ARC restored data, in bytes
+	 * Moving average of the physical size of L2ARC restored data, in bytes,
 	 * to the physical size of their metadata in ARC, in bytes.
 	 * Updated during L2ARC rebuild and during writing of L2ARC log blocks.
 	 */
@@ -720,17 +720,17 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_rebuild_success;
 	/*
 	 * Number of times the L2ARC rebuild failed because the device header
-	 * was in an unsupported format.
+	 * was in an unsupported format or corrupted.
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_unsupported;
 	/*
 	 * Number of times the L2ARC rebuild failed because of IO errors
-	 * while reading the device header.
+	 * while reading a log block.
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_io_errors;
 	/*
-	 * Number of times the L2ARC rebuild failed because the device header
-	 * was invalid (either not initialized or corrupted or the IO failed).
+	 * Number of times the L2ARC rebuild failed because of IO errors when
+	 * reading the device header.
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_dh_errors;
 	/*
@@ -739,7 +739,7 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_lb_errors;
 	/*
-	 * Number of L2ARc log entries (buffers) which failed to be restored
+	 * Number of L2ARC log entries (buffers) which failed to be restored
 	 * in ARC due to checksum errors.
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_le_errors;
@@ -756,7 +756,7 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_l2_rebuild_bufs;
 	/*
-	 * Number of L2ARc log entries (buffers) already cached in ARC. These
+	 * Number of L2ARC log entries (buffers) already cached in ARC. These
 	 * were not restored again.
 	 */
 	kstat_named_t arcstat_l2_rebuild_bufs_precached;
