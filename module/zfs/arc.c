@@ -892,15 +892,15 @@ static void l2arc_read_done(zio_t *);
  * l2arc_rebuild_enabled : A ZFS module parameter that controls whether adding
  * 		an L2ARC device (either at pool import or later) will attempt
  * 		to rebuild L2ARC buffer contents.
- * l2arc_rebuild_blocks_min_size : A ZFS module parameter that controls whether
- * 		log blocks are written to the L2ARC device. If the L2ARC device
- * 		is less than 1GB, the amount of data l2arc_evict() evicts is
- * 		significant compared to the amount of restored L2ARC data. In
- * 		this case do not write or restore log blocks in L2ARC so as not
- * 		to waste space.
+ * l2arc_rebuild_blocks_min_l2size : A ZFS module parameter that controls
+ * 		whether log blocks are written to the L2ARC device. If the L2ARC
+ * 		device is less than 1GB, the amount of data l2arc_evict()
+ * 		evicts is significant compared to the amount of restored L2ARC
+ * 		data. In this case do not write log blocks in L2ARC in order
+ * 		not to waste space.
  */
 int l2arc_rebuild_enabled = B_TRUE;
-int l2arc_rebuild_blocks_min_size = 1024 * 1024 * 1024;
+int l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
@@ -9413,7 +9413,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * is less than that, we reduce the amount of committed and restored
 	 * log entries per block so as to enable persistence.
 	 */
-	if (adddev->l2ad_end < l2arc_rebuild_blocks_min_size) {
+	if (adddev->l2ad_end < l2arc_rebuild_blocks_min_l2size) {
 		adddev->l2ad_log_entries = 0;
 	} else {
 		adddev->l2ad_log_entries = MIN((adddev->l2ad_end -
@@ -10556,8 +10556,8 @@ module_param(l2arc_rebuild_enabled, int, 0644);
 MODULE_PARM_DESC(l2arc_rebuild_enabled,
 	"Rebuild the L2ARC when importing a pool");
 
-module_param(l2arc_rebuild_blocks_min_size, int, 0644);
-MODULE_PARM_DESC(l2arc_rebuild_blocks_min_size,
+module_param(l2arc_rebuild_blocks_min_l2size, int, 0644);
+MODULE_PARM_DESC(l2arc_rebuild_blocks_min_l2size,
 	"Min size in bytes to write rebuild log blocks in L2ARC");
 
 module_param_call(zfs_arc_dnode_limit, param_set_arc_long, param_get_long,
