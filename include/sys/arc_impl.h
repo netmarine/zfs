@@ -236,15 +236,13 @@ typedef struct l2arc_log_ent_phys {
 	 *	* logical size (in sectors)
 	 *	* physical (compressed) size (in sectors)
 	 *	* compression algorithm
-	 *	* checksum algorithm (used for le_cksum)
 	 *	* object type (used to restore arc_buf_contents_t)
 	 *	* protected status (used for encryption)
 	 *	* prefetch status (used in l2arc_read_done())
 	 */
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
-	zio_cksum_t		le_cksum;	/* checksum of log entry */
-	const uint64_t		le_pad[7];	/* pad to 128 bytes	 */
+	const uint64_t		le_pad[11];	/* pad to 128 bytes	 */
 } l2arc_log_ent_phys_t;
 
 #define	L2ARC_LOG_BLK_MAX_ENTRIES	(1023)
@@ -734,15 +732,10 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_dh_errors;
 	/*
-	 * Number of L2ARC log blocks which had none of their log entries
-	 * (buffers) restored in ARC due to checksum errors.
+	 * Number of L2ARC log blocks which failed to be restored due to
+	 * checksum errors.
 	 */
 	kstat_named_t arcstat_l2_rebuild_abort_cksum_lb_errors;
-	/*
-	 * Number of L2ARC log entries (buffers) which failed to be restored
-	 * in ARC due to checksum errors.
-	 */
-	kstat_named_t arcstat_l2_rebuild_abort_cksum_le_errors;
 	/*
 	 * Number of times the L2ARC rebuild was aborted due to low system
 	 * memory.
