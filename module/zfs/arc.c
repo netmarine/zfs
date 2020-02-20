@@ -876,7 +876,7 @@ static void l2arc_read_done(zio_t *);
  * 		not to waste space.
  */
 int l2arc_rebuild_enabled = B_TRUE;
-int l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
+unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
@@ -10090,7 +10090,7 @@ ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, norw, INT, ZMOD_RW,
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, rebuild_enabled, INT, ZMOD_RW,
 	"Rebuild the L2ARC when importing a pool");
 
-ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, rebuild_blocks_min_l2size, INT, ZMOD_RW,
+ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, rebuild_blocks_min_l2size, ULONG, ZMOD_RW,
 	"Min size in bytes to write rebuild log blocks in L2ARC");
 
 ZFS_MODULE_PARAM_CALL(zfs_arc, zfs_arc_, lotsfree_percent, param_set_arc_int,
