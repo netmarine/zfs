@@ -8639,7 +8639,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			}
 
 			passed_sz += HDR_GET_LSIZE(hdr);
-			if (passed_sz > headroom) {
+			if (l2arc_headroom != 0 && passed_sz > headroom) {
 				/*
 				 * Searched too far.
 				 */
