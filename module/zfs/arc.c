@@ -899,7 +899,7 @@ static void l2arc_read_done(zio_t *);
  * 		not to waste space.
  */
 int l2arc_rebuild_enabled = B_TRUE;
-int l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
+unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
@@ -10526,7 +10526,7 @@ module_param(l2arc_rebuild_enabled, int, 0644);
 MODULE_PARM_DESC(l2arc_rebuild_enabled,
 	"Rebuild the L2ARC when importing a pool");
 
-module_param(l2arc_rebuild_blocks_min_l2size, int, 0644);
+module_param(l2arc_rebuild_blocks_min_l2size, ulong, 0644);
 MODULE_PARM_DESC(l2arc_rebuild_blocks_min_l2size,
 	"Min size in bytes to write rebuild log blocks in L2ARC");
 
