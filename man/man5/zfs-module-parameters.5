@@ -169,7 +169,8 @@ Default value: \fB1\fR.
 How far through the ARC lists to search for L2ARC cacheable content, expressed
 as a multiplier of \fBl2arc_write_max\fR.
 ARC persistence across reboots can be achieved with persistent L2ARC by setting
-this parameter to \fBARC size (in bytes)/l2arc_write_max\fR.
+this parameter to \fB0\fR allowing the full length of ARC lists to be searched
+for cacheable content.
 .sp
 Default value: \fB2\fR.
 .RE
