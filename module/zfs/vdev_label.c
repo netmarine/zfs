@@ -510,8 +510,8 @@ vdev_config_generate(spa_t *spa, vdev_t *vd, boolean_t getstats,
 
 	if (flags & VDEV_CONFIG_L2CACHE)
 		/* indicate that we support L2ARC persistence */
-		VERIFY(nvlist_add_boolean_value(nv,
-		    ZPOOL_CONFIG_L2CACHE_PERSISTENT, B_TRUE) == 0);
+		fnvlist_add_boolean_value(nv, ZPOOL_CONFIG_L2CACHE_PERSISTENT,
+		    B_TRUE);
 
 	if (vd->vdev_dtl_sm != NULL) {
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_DTL,
