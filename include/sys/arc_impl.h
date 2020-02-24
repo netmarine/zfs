@@ -264,7 +264,7 @@ typedef struct l2arc_log_blk_phys {
 	 * correctness.
 	 */
 	l2arc_log_blkptr_t	lb_prev_lbp;	/* pointer to prev log block */
-	uint64_t		lb_pad[9];	/* pad to 128Kbytes */
+	uint64_t		lb_pad[9];	/* pad to 128K */
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;				/* 128K total */

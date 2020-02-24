@@ -33,7 +33,7 @@
 #	5. Read the amount of log blocks written from the header of the
 #		L2ARC device.
 #	6. Import pool.
-#	7. Read the amount of log blocks rebuild in arcstats and compare to
+#	7. Read the amount of log blocks rebuilt in arcstats and compare to
 #		(4).
 #	8. Read the file written in (2) and check if l2_hits in
 #		/proc/spl/kstat/zfs/arcstats increased.
