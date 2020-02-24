@@ -8581,12 +8581,13 @@ l2arc_blk_fetch_done(zio_t *zio)
 static uint64_t
 l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 {
-	arc_buf_hdr_t *hdr, *hdr_prev, *head;
-	uint64_t write_asize, write_psize, write_lsize, headroom;
-	boolean_t full, dev_hdr_update;
-	l2arc_write_callback_t *cb = NULL;
-	zio_t *pio, *wzio;
-	uint64_t guid = spa_load_guid(spa);
+	arc_buf_hdr_t 		*hdr, *hdr_prev, *head;
+	uint64_t 		write_asize, write_psize, write_lsize, headroom;
+	boolean_t		full, dev_hdr_update;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
+	l2arc_write_callback_t	*cb = NULL;
+	zio_t 			*pio, *wzio;
+	uint64_t 		guid = spa_load_guid(spa);
 
 	ASSERT3P(dev->l2ad_vdev, !=, NULL);
 
@@ -8805,7 +8806,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		 * Although we did not write any buffers l2ad_evict may
 		 * have advanced. If true update the L2ARC device header.
 		 */
-		if (dev->l2ad_evict > dev->l2ad_dev_hdr->dh_evict)
+		if (dev->l2ad_evict > l2dhdr->dh_evict)
 			l2arc_dev_hdr_update(dev);
 
 		return (0);
@@ -8822,8 +8823,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * If log_entries = 0 also update the header here,
 	 * otherwise it will not be updated.
 	 */
-	if (dev_hdr_update || dev->l2ad_dev_hdr->dh_log_blk_ent == 0 ||
-	    dev->l2ad_evict > dev->l2ad_dev_hdr->dh_evict)
+	if (dev_hdr_update || l2dhdr->dh_log_blk_ent == 0 ||
+	    dev->l2ad_evict > l2dhdr->dh_evict)
 		l2arc_dev_hdr_update(dev);
 
 	/*
@@ -8834,7 +8835,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_evict = dev->l2ad_start;
-		dev->l2ad_dev_hdr->dh_evict = dev->l2ad_start;
+		l2dhdr->dh_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
@@ -8981,7 +8982,8 @@ void
 l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
 	l2arc_dev_t		*adddev;
-	l2arc_dev_hdr_phys_t	*hdr;
+	l2arc_dev_hdr_phys_t	*l2dhdr;
+	uint64_t		l2dhdr_asize;
 	int			err;
 
 	ASSERT(!l2arc_vdev_present(vd));
@@ -8993,9 +8995,9 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_spa = spa;
 	adddev->l2ad_vdev = vd;
 	/* leave extra size for an l2arc device header */
-	adddev->l2ad_dev_hdr_asize = MAX(sizeof (*adddev->l2ad_dev_hdr),
-	    1 << vd->vdev_ashift);
-	adddev->l2ad_start = VDEV_LABEL_START_SIZE + adddev->l2ad_dev_hdr_asize;
+	l2dhdr_asize = adddev->l2ad_dev_hdr_asize =
+	    MAX(sizeof (*adddev->l2ad_dev_hdr), 1 << vd->vdev_ashift);
+	adddev->l2ad_start = VDEV_LABEL_START_SIZE + l2dhdr_asize;
 	adddev->l2ad_end = VDEV_LABEL_START_SIZE + vdev_get_min_asize(vd);
 	ASSERT3U(adddev->l2ad_start, <, adddev->l2ad_end);
 	adddev->l2ad_hand = adddev->l2ad_start;
@@ -9003,8 +9005,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
-	hdr = adddev->l2ad_dev_hdr = kmem_zalloc(adddev->l2ad_dev_hdr_asize,
-	    KM_SLEEP);
+	l2dhdr = adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -9052,8 +9053,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 */
 	list_insert_head(l2arc_dev_list, adddev);
 	atomic_inc_64(&l2arc_ndev);
-	if (rebuild && l2arc_rebuild_enabled && hdr->dh_log_blk_ent > 0 &&
-	    hdr->dh_log_blk_count > 0) {
+	if (rebuild && l2arc_rebuild_enabled && l2dhdr->dh_log_blk_ent > 0 &&
+	    l2dhdr->dh_log_blk_count > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
@@ -9069,7 +9070,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 		 * header. We zero out the memory holding the header to reset
 		 * dh_start_lbps.
 		 */
-		bzero(hdr, adddev->l2ad_dev_hdr_asize);
+		bzero(l2dhdr, l2dhdr_asize);
 		l2arc_dev_hdr_update(adddev);
 	}
 
@@ -9255,6 +9256,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	vdev_t			*vd = dev->l2ad_vdev;
 	spa_t			*spa = vd->vdev_spa;
 	int			err;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
 	l2arc_log_blkptr_t	lb_ptrs[2];
@@ -9275,20 +9277,18 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	dev->l2ad_evict = MAX(dev->l2ad_dev_hdr->dh_evict, dev->l2ad_start);
+	dev->l2ad_evict = MAX(l2dhdr->dh_evict, dev->l2ad_start);
 	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
-	    dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr +
-	    BLKPROP_GET_PSIZE(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop)),
-	    dev->l2ad_start);
-	dev->l2ad_first = !!(dev->l2ad_dev_hdr->dh_flags &
+	    l2dhdr->dh_start_lbps[0].lbp_daddr + BLKPROP_GET_PSIZE(
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
+	dev->l2ad_first = !!(l2dhdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
 
 	/* Prepare the rebuild processing state */
-	bcopy(dev->l2ad_dev_hdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
+	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
 	/* Start the rebuild process */
-	for (int i = 0; i < dev->l2ad_dev_hdr->dh_log_blk_count; i++) {
+	for (int i = 0; i < l2dhdr->dh_log_blk_count; i++) {
 		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0])) {
 			zfs_dbgmsg("L2ARC log block pointer invalid, "
 			    "offset: %llu, vdev guid: %llu, l2ad_start: %llu, "
@@ -9413,7 +9413,7 @@ out:
 		 */
 		if (dev->l2ad_hand < dev->l2ad_evict) {
 			dev->l2ad_evict = dev->l2ad_start;
-			dev->l2ad_dev_hdr->dh_evict = dev->l2ad_start;
+			l2dhdr->dh_evict = dev->l2ad_start;
 		}
 
 		dev->l2ad_hand = dev->l2ad_start;
@@ -9436,16 +9436,16 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 {
 	int			err;
 	uint64_t		guid;
-	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
-	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
+	const uint64_t		l2dhdr_asize = dev->l2ad_dev_hdr_asize;
 	abd_t 			*abd;
 
 	guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 
-	abd = abd_get_from_buf(hdr, hdr_asize);
+	abd = abd_get_from_buf(l2dhdr, l2dhdr_asize);
 
 	err = zio_wait(zio_read_phys(NULL, dev->l2ad_vdev,
-	    VDEV_LABEL_START_SIZE, hdr_asize, abd,
+	    VDEV_LABEL_START_SIZE, l2dhdr_asize, abd,
 	    ZIO_CHECKSUM_LABEL, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY |
@@ -9460,14 +9460,15 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 		return (err);
 	}
 
-	if (hdr->dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
-		byteswap_uint64_array(hdr, sizeof (*hdr));
+	if (l2dhdr->dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
+		byteswap_uint64_array(l2dhdr, sizeof (*l2dhdr));
 
-	if (hdr->dh_magic != L2ARC_DEV_HDR_MAGIC || hdr->dh_spa_guid != guid ||
-	    hdr->dh_version != L2ARC_PERSISTENT_VERSION ||
-	    hdr->dh_log_blk_ent != dev->l2ad_log_entries ||
+	if (l2dhdr->dh_magic != L2ARC_DEV_HDR_MAGIC ||
+	    l2dhdr->dh_spa_guid != guid ||
+	    l2dhdr->dh_version != L2ARC_PERSISTENT_VERSION ||
+	    l2dhdr->dh_log_blk_ent != dev->l2ad_log_entries ||
 	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
-	    hdr->dh_evict)) {
+	    l2dhdr->dh_evict)) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
 		 * or containing a header from some other pool or from another
@@ -9756,25 +9757,25 @@ l2arc_log_blk_fetch_abort(zio_t *zio)
 static void
 l2arc_dev_hdr_update(l2arc_dev_t *dev)
 {
-	l2arc_dev_hdr_phys_t	*hdr = dev->l2ad_dev_hdr;
-	const uint64_t		hdr_asize = dev->l2ad_dev_hdr_asize;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
+	const uint64_t		l2dhdr_asize = dev->l2ad_dev_hdr_asize;
 	abd_t			*abd;
 	int			err;
 
-	hdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
-	hdr->dh_version = L2ARC_PERSISTENT_VERSION;
-	hdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
-	hdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
-	hdr->dh_log_blk_ent = dev->l2ad_log_entries;
-	hdr->dh_evict = dev->l2ad_evict;
-	hdr->dh_flags = 0;
+	l2dhdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
+	l2dhdr->dh_version = L2ARC_PERSISTENT_VERSION;
+	l2dhdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
+	l2dhdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
+	l2dhdr->dh_log_blk_ent = dev->l2ad_log_entries;
+	l2dhdr->dh_evict = dev->l2ad_evict;
+	l2dhdr->dh_flags = 0;
 	if (dev->l2ad_first)
-		hdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
+		l2dhdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
 
-	abd = abd_get_from_buf(hdr, hdr_asize);
+	abd = abd_get_from_buf(l2dhdr, l2dhdr_asize);
 
 	err = zio_wait(zio_write_phys(NULL, dev->l2ad_vdev,
-	    VDEV_LABEL_START_SIZE, hdr_asize, abd, ZIO_CHECKSUM_LABEL, NULL,
+	    VDEV_LABEL_START_SIZE, l2dhdr_asize, abd, ZIO_CHECKSUM_LABEL, NULL,
 	    NULL, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE));
 
 	abd_put(abd);
@@ -9795,13 +9796,14 @@ static void
 l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 {
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	uint64_t		psize, asize;
 	zio_t			*wzio;
 	l2arc_lb_abd_buf_t	*abd_buf;
 	uint8_t			*tmpbuf;
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 
-	VERIFY3S(dev->l2ad_log_ent_idx, ==, dev->l2ad_dev_hdr->dh_log_blk_ent);
+	VERIFY3S(dev->l2ad_log_ent_idx, ==, l2dhdr->dh_log_blk_ent);
 
 	tmpbuf = zio_buf_alloc(sizeof (*lb));
 	abd_buf = zio_buf_alloc(sizeof (*abd_buf));
@@ -9810,7 +9812,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t), KM_SLEEP);
 
 	/* link the buffer into the block chain */
-	lb->lb_prev_lbp = dev->l2ad_dev_hdr->dh_start_lbps[1];
+	lb->lb_prev_lbp = l2dhdr->dh_start_lbps[1];
 	lb->lb_magic = L2ARC_LOG_BLK_MAGIC;
 
 	/* try to compress the buffer */
@@ -9827,34 +9829,33 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	 * Update the start log block pointer in the device header to point
 	 * to the log block we're about to write.
 	 */
-	dev->l2ad_dev_hdr->dh_start_lbps[1] =
-	    dev->l2ad_dev_hdr->dh_start_lbps[0];
-	dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
+	l2dhdr->dh_start_lbps[1] = l2dhdr->dh_start_lbps[0];
+	l2dhdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
 	_NOTE(CONSTCOND)
 	BLKPROP_SET_LSIZE(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop, sizeof (*lb));
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, sizeof (*lb));
 	BLKPROP_SET_PSIZE(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop, asize);
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, asize);
 	BLKPROP_SET_CHECKSUM(
-	    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 	    ZIO_CHECKSUM_FLETCHER_4);
 	if (asize < sizeof (*lb)) {
 		/* compression succeeded */
 		bzero(tmpbuf + psize, asize - psize);
 		BLKPROP_SET_COMPRESS(
-		    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
+		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_LZ4);
 	} else {
 		/* compression failed */
 		bcopy(lb, tmpbuf, sizeof (*lb));
 		BLKPROP_SET_COMPRESS(
-		    (&dev->l2ad_dev_hdr->dh_start_lbps[0])->lbp_prop,
+		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_OFF);
 	}
 
 	/* checksum what we're about to write */
 	fletcher_4_native(tmpbuf, asize, NULL,
-	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
+	    &l2dhdr->dh_start_lbps[0].lbp_cksum);
 
 	abd_put(abd_buf->abd);
 
@@ -9872,7 +9873,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	 * Include the committed log block's pointer  in the list of pointers
 	 * to log blocks present in the L2ARC device.
 	 */
-	bcopy(&dev->l2ad_dev_hdr->dh_start_lbps[0], lb_ptr_buf->lb_ptr,
+	bcopy(&l2dhdr->dh_start_lbps[0], lb_ptr_buf->lb_ptr,
 	    sizeof (l2arc_log_blkptr_t));
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_head(&dev->l2ad_lbptr_list, lb_ptr_buf);
@@ -9929,14 +9930,14 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 {
 	l2arc_log_blk_phys_t	*lb = &dev->l2ad_log_blk;
 	l2arc_log_ent_phys_t	*le;
-	l2arc_dev_hdr_phys_t	*dhdr = dev->l2ad_dev_hdr;
+	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 
-	if (dhdr->dh_log_blk_ent == 0)
+	if (l2dhdr->dh_log_blk_ent == 0)
 		return (B_FALSE);
 
 	int index = dev->l2ad_log_ent_idx++;
 
-	ASSERT3S(index, <, dhdr->dh_log_blk_ent);
+	ASSERT3S(index, <, l2dhdr->dh_log_blk_ent);
 	ASSERT(HDR_HAS_L2HDR(hdr));
 
 	le = &lb->lb_entries[index];
@@ -9953,7 +9954,7 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 
 	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
 
-	return (dev->l2ad_log_ent_idx == dev->l2ad_dev_hdr->dh_log_blk_ent);
+	return (dev->l2ad_log_ent_idx == l2dhdr->dh_log_blk_ent);
 }
 
 /*
