@@ -9306,9 +9306,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		    this_lb, next_lb, this_io, &next_io)) != 0)
 			goto out;
 
-		spa_config_exit(spa, SCL_L2ARC, vd);
-		lock_held = B_FALSE;
-
 		/*
 		 * Our memory pressure valve. If the system is running low
 		 * on memory, rather than swamping memory with new ARC buf
@@ -9325,6 +9322,15 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			err = SET_ERROR(ENOMEM);
 			goto out;
 		}
+
+		/*
+		 * We have to drop the lock after checking for memory pressure,
+		 * otherwise we goto out and later call l2arc_dev_hdr_update()
+		 * which panics in zio.c because we dropped the lock
+		 * prematurely.
+		 */
+		spa_config_exit(spa, SCL_L2ARC, vd);
+		lock_held = B_FALSE;
 
 		/*
 		 * Now that we know that the next_lb checks out alright, we
@@ -9398,7 +9404,8 @@ out:
 		zfs_dbgmsg("L2ARC not successfully rebuilt");
 	}
 
-	l2arc_dev_hdr_update(dev);
+	if (err != SET_ERROR(ENOMEM))
+		l2arc_dev_hdr_update(dev);
 
 	/*
 	 * If l2ad_hand is at the end of the device with no space
