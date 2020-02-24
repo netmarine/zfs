@@ -182,7 +182,7 @@ typedef enum l2arc_dev_hdr_flags_t {
 } l2arc_dev_hdr_flags_t;
 
 /*
- * Pointer used in persistent L2ARC (for pointing to log blocks & ARC buffers).
+ * Pointer used in persistent L2ARC (for pointing to log blocks).
  */
 typedef struct l2arc_log_blkptr {
 	/*
@@ -264,7 +264,10 @@ typedef struct l2arc_log_blk_phys {
 	 * correctness.
 	 */
 	l2arc_log_blkptr_t	lb_prev_lbp;	/* pointer to prev log block */
-	uint64_t		lb_pad[9];	/* pad to 128K */
+	/*
+	 * Pad header section to 128 bytes
+	 */
+	uint64_t		lb_pad[9];
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;				/* 128K total */
@@ -289,24 +292,24 @@ typedef struct l2arc_lb_ptr_buf {
 } l2arc_lb_ptr_buf_t;
 
 /* Macros for setting fields in le_prop and lbp_prop */
-#define	BLKPROP_GET_LSIZE(field)	\
+#define	L2BLK_GET_GET_LSIZE(field)	\
 	BF64_GET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1)
-#define	BLKPROP_SET_LSIZE(field, x)	\
+#define	L2BLK_GET_SET_LSIZE(field, x)	\
 	BF64_SET_SB((field), 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1, x)
-#define	BLKPROP_GET_PSIZE(field)	\
+#define	L2BLK_GET_GET_PSIZE(field)	\
 	BF64_GET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1)
-#define	BLKPROP_SET_PSIZE(field, x)	\
+#define	L2BLK_GET_SET_PSIZE(field, x)	\
 	BF64_SET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1, x)
-#define	BLKPROP_GET_COMPRESS(field)	BF64_GET((field), 32, 7)
-#define	BLKPROP_SET_COMPRESS(field, x)	BF64_SET((field), 32, 7, x)
-#define	BLKPROP_GET_CHECKSUM(field)	BF64_GET((field), 40, 8)
-#define	BLKPROP_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
-#define	BLKPROP_GET_TYPE(field)		BF64_GET((field), 48, 8)
-#define	BLKPROP_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
-#define	BLKPROP_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
-#define	BLKPROP_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
-#define	BLKPROP_GET_PREFETCH(field)	BF64_GET((field), 57, 1)
-#define	BLKPROP_SET_PREFETCH(field, x)	BF64_SET((field), 57, 1, x)
+#define	L2BLK_GET_GET_COMPRESS(field)	BF64_GET((field), 32, 7)
+#define	L2BLK_GET_SET_COMPRESS(field, x)	BF64_SET((field), 32, 7, x)
+#define	L2BLK_GET_GET_CHECKSUM(field)	BF64_GET((field), 40, 8)
+#define	L2BLK_GET_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
+#define	L2BLK_GET_GET_TYPE(field)		BF64_GET((field), 48, 8)
+#define	L2BLK_GET_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
+#define	L2BLK_GET_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
+#define	L2BLK_GET_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
+#define	L2BLK_GET_GET_PREFETCH(field)	BF64_GET((field), 57, 1)
+#define	L2BLK_GET_SET_PREFETCH(field, x)	BF64_SET((field), 57, 1, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\

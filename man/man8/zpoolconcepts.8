@@ -337,7 +337,8 @@ will result in scanning the full-length ARC lists for cacheable content to be
 written in L2ARC (persistent ARC). If a cache device is added with
 .Nm zpool Cm add
 its label and header will be overwritten and its contents are not going to be
-restored in L2ARC. If a cache device is onlined with
+restored in L2ARC, even if the device was previously part of the pool. If a
+cache device is onlined with
 .Nm zpool Cm online
 its contents will be restored in L2ARC.
 .Ss Pool checkpoint
