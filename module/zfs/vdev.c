@@ -2277,6 +2277,7 @@ vdev_reopen(vdev_t *vd)
 			 * in the past and prepended an L2ARC uberblock.
 			 */
 			l2arc_add_vdev(spa, vd, B_TRUE);
+			spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 		}
 	} else {
 		(void) vdev_validate(vd);
