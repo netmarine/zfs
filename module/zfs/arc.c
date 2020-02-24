@@ -902,6 +902,7 @@ int l2arc_rebuild_enabled = B_TRUE;
 unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
+void l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild);
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
 static int l2arc_rebuild(l2arc_dev_t *dev);
 
@@ -9361,9 +9362,7 @@ void
 l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 {
 	l2arc_dev_t		*adddev;
-	l2arc_dev_hdr_phys_t	*l2dhdr;
 	uint64_t		l2dhdr_asize;
-	int			err;
 
 	ASSERT(!l2arc_vdev_present(vd));
 
@@ -9383,7 +9382,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
-	l2dhdr = adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
+	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
 	vd->vdev_trim_last_offset = adddev->l2ad_start;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
@@ -9394,12 +9393,45 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	list_create(&adddev->l2ad_buflist, sizeof (arc_buf_hdr_t),
 	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
 
+	/*
+	 * This is a list of pointers to log blocks that are still present
+	 * on the device.
+	 */
 	list_create(&adddev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
 	    offsetof(l2arc_lb_ptr_buf_t, node));
 
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
 	zfs_refcount_create(&adddev->l2ad_alloc);
 	zfs_refcount_create(&adddev->l2ad_log_blk_count);
+
+	/*
+	 * Add device to global list
+	 */
+	mutex_enter(&l2arc_dev_mtx);
+	list_insert_head(l2arc_dev_list, adddev);
+	atomic_inc_64(&l2arc_ndev);
+	mutex_exit(&l2arc_dev_mtx);
+
+	/*
+	 * Decide if vdev is eligible for L2ARC rebuild
+	 */
+	l2arc_rebuild_vdev(adddev->l2ad_vdev, rebuild);
+}
+
+void
+l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
+{
+	l2arc_dev_t		*dev = NULL;
+	l2arc_dev_hdr_phys_t	*l2dhdr;
+	uint64_t		l2dhdr_asize;
+	spa_t			*spa;
+	int			err;
+
+	dev = l2arc_vdev_get(vd);
+	ASSERT3P(dev, !=, NULL);
+	spa = dev->l2ad_spa;
+	l2dhdr = dev->l2ad_dev_hdr;
+	l2dhdr_asize = dev->l2ad_dev_hdr_asize;
 
 	/*
 	 * The L2ARC has to hold at least the payload of one log block for
@@ -9411,27 +9443,22 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	 * is less than that, we reduce the amount of committed and restored
 	 * log entries per block so as to enable persistence.
 	 */
-	if (adddev->l2ad_end < l2arc_rebuild_blocks_min_l2size) {
-		adddev->l2ad_log_entries = 0;
+	if (dev->l2ad_end < l2arc_rebuild_blocks_min_l2size) {
+		dev->l2ad_log_entries = 0;
 	} else {
-		adddev->l2ad_log_entries = MIN((adddev->l2ad_end -
-		    adddev->l2ad_start) >> SPA_MAXBLOCKSHIFT,
+		dev->l2ad_log_entries = MIN((dev->l2ad_end -
+		    dev->l2ad_start) >> SPA_MAXBLOCKSHIFT,
 		    L2ARC_LOG_BLK_MAX_ENTRIES);
 	}
+
 
 	/*
 	 * Read the device header, if an error is returned do not rebuild L2ARC.
 	 */
-	mutex_enter(&l2arc_dev_mtx);
-	if ((err = l2arc_dev_hdr_read(adddev)) != 0) {
+	if ((err = l2arc_dev_hdr_read(dev)) != 0) {
 		rebuild = B_FALSE;
 	}
 
-	/*
-	 * Add device to global list
-	 */
-	list_insert_head(l2arc_dev_list, adddev);
-	atomic_inc_64(&l2arc_ndev);
 	if (rebuild && l2arc_rebuild_enabled && l2dhdr->dh_log_blk_ent > 0 &&
 	    l2dhdr->dh_log_blk_count > 0) {
 		/*
@@ -9440,7 +9467,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 		 * import. Instead spa_load_impl will hand that off to an
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
-		adddev->l2ad_rebuild = B_TRUE;
+		dev->l2ad_rebuild = B_TRUE;
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
@@ -9450,10 +9477,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 		 * dh_start_lbps.
 		 */
 		bzero(l2dhdr, l2dhdr_asize);
-		l2arc_dev_hdr_update(adddev);
+		l2arc_dev_hdr_update(dev);
 	}
-
-	mutex_exit(&l2arc_dev_mtx);
 }
 
 /*

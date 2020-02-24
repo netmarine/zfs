@@ -2269,14 +2269,17 @@ vdev_reopen(vdev_t *vd)
 	if (vd->vdev_aux) {
 		(void) vdev_validate_aux(vd);
 		if (vdev_readable(vd) && vdev_writeable(vd) &&
-		    vd->vdev_aux == &spa->spa_l2cache &&
-		    !l2arc_vdev_present(vd)) {
+		    vd->vdev_aux == &spa->spa_l2cache) {
 			/*
-			 * When reopening we can assume persistent L2ARC is
-			 * supported, since we've already opened the device
-			 * in the past and prepended an L2ARC uberblock.
+			 * When reopening we can assume the device label has
+			 * the attribute l2cache_persistent, since we've already
+			 * opened the device in the past and updated the label.
 			 */
-			l2arc_add_vdev(spa, vd, B_TRUE);
+			if (l2arc_vdev_present(vd)) {
+				l2arc_rebuild_vdev(vd, B_TRUE);
+			} else {
+				l2arc_add_vdev(spa, vd, B_TRUE);
+			}
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 		}
 	} else {
