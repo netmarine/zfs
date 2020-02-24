@@ -9040,13 +9040,10 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	}
 
 	/*
-	 * Read the device header, and if hdr->dh_log_blk_ent is not equal to
-	 * the calculated one do not rebuild L2ARC.
+	 * Read the device header, if an error is returned do not rebuild L2ARC.
 	 */
 	mutex_enter(&l2arc_dev_mtx);
 	if ((err = l2arc_dev_hdr_read(adddev)) != 0) {
-		/* device header corrupted, start a new one */
-		bzero(hdr, adddev->l2ad_dev_hdr_asize);
 		rebuild = B_FALSE;
 	}
 
@@ -9064,14 +9061,15 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
 		adddev->l2ad_rebuild = B_TRUE;
-	} else if (err != 0 && spa_writeable(spa)) {
+	} else if (!rebuild && spa_writeable(spa)) {
 		/*
-		 * If we are not rebuilding the L2ARC and if the header was
-		 * corrupted or non-existent, create a new one.
-		 * We cannot update the header of the device here if the L2ARC
-		 * is going to be rebuilt since dh_log_blk_count will be set to
-		 * 0.
+		 * The boolean rebuild is false if the device label is missing
+		 * l2cache_persistent (or was just created) or if reading the
+		 * device header returned an error. In this case create a new
+		 * header. We zero out the memory holding the header to reset
+		 * dh_start_lbps.
 		 */
+		bzero(hdr, adddev->l2ad_dev_hdr_asize);
 		l2arc_dev_hdr_update(adddev);
 	}
 
