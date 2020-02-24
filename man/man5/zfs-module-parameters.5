@@ -254,7 +254,7 @@ Use \fB1\fR for yes (default) and \fB0\fR for no.
 .ad
 .RS 12n
 Min size (in bytes) of an L2ARC device required in order to write log blocks
-in it. The log blocks are going to be used upon importing the pool to rebuild
+in it. The log blocks are used upon importing the pool to rebuild
 the L2ARC (persistent L2ARC). Rationale: for L2ARC devices less than 1GB, the
 amount of data l2arc_evict() evicts is significant compared to the amount of
 restored L2ARC data. In this case do not write log blocks in L2ARC in order not

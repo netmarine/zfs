@@ -36,7 +36,7 @@
 #		L2ARC device.
 #	5. Import pool.
 #	6. Mount the encypted ZFS file system.
-#	7. Read the amount of log blocks rebuild in arcstats and compare to
+#	7. Read the amount of log blocks rebuilt in arcstats and compare to
 #		(5).
 #	8. Read the file written in (2) and check if l2_hits in
 #		/proc/spl/kstat/zfs/arcstats increased.
