@@ -2279,7 +2279,7 @@ vdev_reopen(vdev_t *vd)
 			 * blocks.
 			 */
 			if (l2arc_vdev_present(vd)) {
-				l2arc_rebuild_vdev(vd, B_TRUE);
+				l2arc_rebuild_vdev(vd, B_TRUE, B_TRUE);
 			} else {
 				l2arc_add_vdev(spa, vd, B_TRUE);
 			}

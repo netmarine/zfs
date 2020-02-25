@@ -902,7 +902,7 @@ int l2arc_rebuild_enabled = B_TRUE;
 unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
-void l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild);
+void l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen);
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
 static int l2arc_rebuild(l2arc_dev_t *dev);
 
@@ -9431,11 +9431,11 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	/*
 	 * Decide if vdev is eligible for L2ARC rebuild
 	 */
-	l2arc_rebuild_vdev(adddev->l2ad_vdev, rebuild);
+	l2arc_rebuild_vdev(adddev->l2ad_vdev, rebuild, B_FALSE);
 }
 
 void
-l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
+l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 {
 	l2arc_dev_t		*dev = NULL;
 	l2arc_dev_hdr_phys_t	*l2dhdr;
@@ -9484,16 +9484,18 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
 		 */
 		dev->l2ad_rebuild = B_TRUE;
 		/*
-		 * If we are restoring the contents of this device to L2ARC,
-		 * we should reset the lists and counters of ARC buffers and
-		 * pointers to log blocks present on the device, in case
-		 * this is an onlining (vdev_reopen) of a present vdev
-		 * (l2arc_vdev_present).
+		 * If we are onlining a cache device (vdev_reopen) that was
+		 * still present (l2arc_vdev_present), we should reset the
+		 * lists and counters of ARC buffers and pointers to log blocks
+		 * before restoring its contents to L2ARC.
 		 */
-		l2arc_dev_clear_lists(dev);
-		vdev_clear_stats(dev->l2ad_vdev);
-		l2arc_dev_create_lists(dev);
-		vdev_space_update(vd, 0, 0, dev->l2ad_end - dev->l2ad_hand);
+		if (reopen) {
+			l2arc_dev_clear_lists(dev);
+			vdev_clear_stats(dev->l2ad_vdev);
+			l2arc_dev_create_lists(dev);
+			vdev_space_update(vd, 0, 0,
+			    dev->l2ad_end - dev->l2ad_hand);
+		}
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
