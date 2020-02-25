@@ -9887,23 +9887,23 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	l2dhdr->dh_start_lbps[1] = l2dhdr->dh_start_lbps[0];
 	l2dhdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
 	_NOTE(CONSTCOND)
-	L2BLK_GET_SET_LSIZE(
+	L2BLK_SET_LSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, sizeof (*lb));
-	L2BLK_GET_SET_PSIZE(
+	L2BLK_SET_PSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, asize);
-	L2BLK_GET_SET_CHECKSUM(
+	L2BLK_SET_CHECKSUM(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 	    ZIO_CHECKSUM_FLETCHER_4);
 	if (asize < sizeof (*lb)) {
 		/* compression succeeded */
 		bzero(tmpbuf + psize, asize - psize);
-		L2BLK_GET_SET_COMPRESS(
+		L2BLK_SET_COMPRESS(
 		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_LZ4);
 	} else {
 		/* compression failed */
 		bcopy(lb, tmpbuf, sizeof (*lb));
-		L2BLK_GET_SET_COMPRESS(
+		L2BLK_SET_COMPRESS(
 		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 		    ZIO_COMPRESS_OFF);
 	}
@@ -10000,12 +10000,12 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	le->le_dva = hdr->b_dva;
 	le->le_birth = hdr->b_birth;
 	le->le_daddr = hdr->b_l2hdr.b_daddr;
-	L2BLK_GET_SET_LSIZE((le)->le_prop, HDR_GET_LSIZE(hdr));
-	L2BLK_GET_SET_PSIZE((le)->le_prop, HDR_GET_PSIZE(hdr));
-	L2BLK_GET_SET_COMPRESS((le)->le_prop, HDR_GET_COMPRESS(hdr));
-	L2BLK_GET_SET_TYPE((le)->le_prop, hdr->b_type);
-	L2BLK_GET_SET_PROTECTED((le)->le_prop, !!(HDR_PROTECTED(hdr)));
-	L2BLK_GET_SET_PREFETCH((le)->le_prop, !!(HDR_PREFETCH(hdr)));
+	L2BLK_SET_LSIZE((le)->le_prop, HDR_GET_LSIZE(hdr));
+	L2BLK_SET_PSIZE((le)->le_prop, HDR_GET_PSIZE(hdr));
+	L2BLK_SET_COMPRESS((le)->le_prop, HDR_GET_COMPRESS(hdr));
+	L2BLK_SET_TYPE((le)->le_prop, hdr->b_type);
+	L2BLK_SET_PROTECTED((le)->le_prop, !!(HDR_PROTECTED(hdr)));
+	L2BLK_SET_PREFETCH((le)->le_prop, !!(HDR_PREFETCH(hdr)));
 
 	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
 
