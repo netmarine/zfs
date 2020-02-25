@@ -8330,7 +8330,7 @@ top:
 			zfs_refcount_remove(&dev->l2ad_log_blk_count,
 			    lb_ptr_buf);
 			bytes_dropped +=
-			    L2BLK_GET_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
+			    L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
 			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
@@ -8737,7 +8737,7 @@ top:
 			break;
 		} else {
 			vdev_space_update(dev->l2ad_vdev,
-			    -L2BLK_GET_GET_PSIZE(
+			    -L2BLK_GET_PSIZE(
 			    (lb_ptr_buf->lb_ptr)->lbp_prop), 0, 0);
 			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
 			zfs_refcount_remove(&dev->l2ad_log_blk_count,
@@ -9706,7 +9706,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	/* Retrieve the persistent L2ARC device state */
 	vd->vdev_trim_last_offset = MAX(l2dhdr->dh_evict, dev->l2ad_start);
 	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
-	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_GET_PSIZE(
+	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
 	dev->l2ad_first = !!(l2dhdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
@@ -9726,7 +9726,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			    dev->l2ad_start, dev->l2ad_end, dev->l2ad_hand,
 			    dev->l2ad_vdev->vdev_trim_last_offset,
 			    dev->l2ad_first,
-			    L2BLK_GET_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
+			    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
 			err = SET_ERROR(EINVAL);
 			break;
 		}
@@ -9766,7 +9766,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * can start reconstruction from this log block.
 		 */
 		l2arc_log_blk_restore(dev, this_lb,
-		    L2BLK_GET_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
+		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
 		    lb_ptrs[0].lbp_daddr);
 
 		/*
@@ -9783,7 +9783,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		mutex_exit(&dev->l2ad_mtx);
 		zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 		vdev_space_update(vd,
-		    L2BLK_GET_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
+		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
 
 		for (;;) {
 			if (dev->l2ad_rebuild_cancel) {
@@ -9992,7 +9992,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 
 	/* Make sure the buffer checks out */
 	fletcher_4_native(this_lb,
-	    L2BLK_GET_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
+	    L2BLK_GET_PSIZE((this_lbp)->lbp_prop), NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
 		zfs_dbgmsg("L2ARC log block cksum failed, offset: %llu, "
@@ -10004,17 +10004,17 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	}
 
 	/* Now we can take our time decoding this buffer */
-	switch (L2BLK_GET_GET_COMPRESS((this_lbp)->lbp_prop)) {
+	switch (L2BLK_GET_COMPRESS((this_lbp)->lbp_prop)) {
 	case ZIO_COMPRESS_OFF:
 		break;
 	case ZIO_COMPRESS_LZ4:
-		abd = abd_alloc_for_io(L2BLK_GET_GET_PSIZE(
+		abd = abd_alloc_for_io(L2BLK_GET_PSIZE(
 		    (this_lbp)->lbp_prop), B_TRUE);
 		abd_copy_from_buf_off(abd, this_lb, 0,
-		    L2BLK_GET_GET_PSIZE((this_lbp)->lbp_prop));
+		    L2BLK_GET_PSIZE((this_lbp)->lbp_prop));
 		if ((err = zio_decompress_data(
-		    L2BLK_GET_GET_COMPRESS((this_lbp)->lbp_prop),
-		    abd, this_lb, L2BLK_GET_GET_PSIZE((this_lbp)->lbp_prop),
+		    L2BLK_GET_COMPRESS((this_lbp)->lbp_prop),
+		    abd, this_lb, L2BLK_GET_PSIZE((this_lbp)->lbp_prop),
 		    sizeof (*this_lb))) != 0) {
 			err = SET_ERROR(EINVAL);
 			goto cleanup;
@@ -10075,8 +10075,8 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 		 * This also works when the restored bufs get evicted at any
 		 * point during the rebuild.
 		 */
-		size += L2BLK_GET_GET_LSIZE((&lb->lb_entries[i])->le_prop);
-		psize += L2BLK_GET_GET_PSIZE((&lb->lb_entries[i])->le_prop);
+		size += L2BLK_GET_LSIZE((&lb->lb_entries[i])->le_prop);
+		psize += L2BLK_GET_PSIZE((&lb->lb_entries[i])->le_prop);
 		l2arc_hdr_restore(&lb->lb_entries[i], dev);
 	}
 
@@ -10102,7 +10102,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 {
 	arc_buf_hdr_t		*hdr, *exists;
 	kmutex_t		*hash_lock;
-	arc_buf_contents_t	type = L2BLK_GET_GET_TYPE((le)->le_prop);
+	arc_buf_contents_t	type = L2BLK_GET_TYPE((le)->le_prop);
 	uint64_t		asize;
 
 	/*
@@ -10110,14 +10110,14 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	 * sleep if memory is full and we don't have to deal with failed
 	 * allocations.
 	 */
-	hdr = arc_buf_alloc_l2only(L2BLK_GET_GET_LSIZE((le)->le_prop), type,
+	hdr = arc_buf_alloc_l2only(L2BLK_GET_LSIZE((le)->le_prop), type,
 	    dev, le->le_dva, le->le_daddr,
-	    L2BLK_GET_GET_PSIZE((le)->le_prop), le->le_birth,
-	    L2BLK_GET_GET_COMPRESS((le)->le_prop),
-	    L2BLK_GET_GET_PROTECTED((le)->le_prop),
-	    L2BLK_GET_GET_PREFETCH((le)->le_prop));
+	    L2BLK_GET_PSIZE((le)->le_prop), le->le_birth,
+	    L2BLK_GET_COMPRESS((le)->le_prop),
+	    L2BLK_GET_PROTECTED((le)->le_prop),
+	    L2BLK_GET_PREFETCH((le)->le_prop));
 	asize = vdev_psize_to_asize(dev->l2ad_vdev,
-	    L2BLK_GET_GET_PSIZE((le)->le_prop));
+	    L2BLK_GET_PSIZE((le)->le_prop));
 
 	/*
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
@@ -10162,7 +10162,7 @@ l2arc_log_blk_fetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
 	zio_t			*pio;
 	l2arc_read_callback_t	*cb;
 
-	psize = L2BLK_GET_GET_PSIZE((lbp)->lbp_prop);
+	psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
 	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
 	cb = kmem_zalloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
 	cb->l2rcb_abd = abd_get_from_buf(lb, psize);
@@ -10338,7 +10338,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 static boolean_t
 l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
-	uint64_t psize = L2BLK_GET_GET_PSIZE((lbp)->lbp_prop);
+	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
 	uint64_t end = lbp->lbp_daddr + psize;
 	boolean_t trimmed;
 
