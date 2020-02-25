@@ -9112,7 +9112,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
 		 * (l2arc_vdev_present).
 		 */
 		l2arc_dev_clear_lists(dev);
+		vdev_clear_stats(dev->l2ad_vdev);
 		l2arc_dev_create_lists(dev);
+		vdev_space_update(vd, 0, 0, dev->l2ad_end - dev->l2ad_hand);
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
