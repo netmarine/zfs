@@ -9353,6 +9353,38 @@ l2arc_vdev_get(vdev_t *vd)
 	return (dev);
 }
 
+static inline void
+l2arc_dev_create_lists(l2arc_dev_t *dev)
+{
+	/*
+	 * This is a list of all ARC buffers that are still valid on the
+	 * device.
+	 */
+	list_create(&dev->l2ad_buflist, sizeof (arc_buf_hdr_t),
+	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
+
+	/*
+	 * This is a list of pointers to log blocks that are still present
+	 * on the device.
+	 */
+	list_create(&dev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
+	    offsetof(l2arc_lb_ptr_buf_t, node));
+
+	zfs_refcount_create(&dev->l2ad_alloc);
+	zfs_refcount_create(&dev->l2ad_log_blk_count);
+}
+
+static inline void
+l2arc_dev_clear_lists(l2arc_dev_t *dev)
+{
+	l2arc_evict(dev, 0, B_TRUE);
+	list_destroy(&dev->l2ad_buflist);
+	ASSERT(list_is_empty(&dev->l2ad_lbptr_list));
+	list_destroy(&dev->l2ad_lbptr_list);
+	zfs_refcount_destroy(&dev->l2ad_alloc);
+	zfs_refcount_destroy(&dev->l2ad_log_blk_count);
+}
+
 /*
  * Add a vdev for use by the L2ARC.  By this point the spa has already
  * validated the vdev and opened it. The `rebuild' flag indicates whether
@@ -9386,24 +9418,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	vd->vdev_trim_last_offset = adddev->l2ad_start;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
-	/*
-	 * This is a list of all ARC buffers that are still valid on the
-	 * device.
-	 */
-	list_create(&adddev->l2ad_buflist, sizeof (arc_buf_hdr_t),
-	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
-
-	/*
-	 * This is a list of pointers to log blocks that are still present
-	 * on the device.
-	 */
-	list_create(&adddev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
-	    offsetof(l2arc_lb_ptr_buf_t, node));
-
+	l2arc_dev_create_lists(adddev);
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
-	zfs_refcount_create(&adddev->l2ad_alloc);
-	zfs_refcount_create(&adddev->l2ad_log_blk_count);
-
 	/*
 	 * Add device to global list
 	 */
@@ -9451,7 +9467,6 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
 		    L2ARC_LOG_BLK_MAX_ENTRIES);
 	}
 
-
 	/*
 	 * Read the device header, if an error is returned do not rebuild L2ARC.
 	 */
@@ -9468,6 +9483,15 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild)
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
 		dev->l2ad_rebuild = B_TRUE;
+		/*
+		 * If we are restoring the contents of this device to L2ARC,
+		 * we should reset the lists and counters of ARC buffers and
+		 * pointers to log blocks present on the device, in case
+		 * this is an onlining (vdev_reopen) of a present vdev
+		 * (l2arc_vdev_present).
+		 */
+		l2arc_dev_clear_lists(dev);
+		l2arc_dev_create_lists(dev);
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
@@ -9518,13 +9542,8 @@ l2arc_remove_vdev(vdev_t *vd)
 	/*
 	 * Clear all buflists and ARC references.  L2ARC device flush.
 	 */
-	l2arc_evict(remdev, 0, B_TRUE);
-	list_destroy(&remdev->l2ad_buflist);
-	ASSERT(list_is_empty(&remdev->l2ad_lbptr_list));
-	list_destroy(&remdev->l2ad_lbptr_list);
+	l2arc_dev_clear_lists(remdev);
 	mutex_destroy(&remdev->l2ad_mtx);
-	zfs_refcount_destroy(&remdev->l2ad_alloc);
-	zfs_refcount_destroy(&remdev->l2ad_log_blk_count);
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
 	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
