@@ -3532,7 +3532,6 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	abd_t *abd;
 	zio_cksum_t cksum;
 	int i, failed = 0;
-	boolean_t wrong_cksum = B_FALSE;
 
 	bcopy((&l2dhdr)->dh_start_lbps, lbps, sizeof (lbps));
 
@@ -3542,11 +3541,6 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		pread64(fd, &this_lb, psize, lbps[0].lbp_daddr);
 
 		fletcher_4_native_varsize(&this_lb, psize, &cksum);
-		if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
-			failed++;
-			wrong_cksum = B_TRUE;
-			continue;
-		}
 
 		switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
 		case ZIO_COMPRESS_OFF:
@@ -3581,7 +3575,14 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		    (u_longlong_t)L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop));
 		(void) printf("|    \tcksumalgo: %llu\n",
 		    (u_longlong_t)L2BLK_GET_CHECKSUM((&lbps[0])->lbp_prop));
-		(void) printf("|    \twrong cksum: %d\n", wrong_cksum);
+
+		if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
+			failed++;
+			(void) printf("|    \t!! invalid cksum\n");
+		} else {
+			(void) printf("|    \tvalid cksum\n");
+		}
+
 		(void) printf("|\n");
 
 		if (dump_opt['l'] > 2)
@@ -3593,6 +3594,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	}
 	(void) printf("%d out of %d log blocks dumped\n",
 	    (int)l2dhdr.dh_log_blk_count - failed, i);
+	(void) printf("\n");
 }
 
 static void
