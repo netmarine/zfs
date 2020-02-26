@@ -2910,43 +2910,153 @@ print_l2arc_header(void)
 }
 
 static void
+print_l2arc_log_blocks(void)
+{
+	(void) printf("------------------------------------\n");
+	(void) printf("L2ARC device log blocks\n");
+	(void) printf("------------------------------------\n");
+}
+
+static void
+dump_l2arc_log_entries(l2arc_dev_hdr_phys_t l2dhdr,
+    l2arc_log_blk_phys_t this_lb, int i)
+{
+	for (int j = 0; j < l2dhdr.dh_log_blk_ent; j++) {
+		dva_t dva = this_lb.lb_entries[j].le_dva;
+		printf("lb[%d]\t\tle[%d]\t\tDVA asize: %llu, vdev: %llu,"
+		    "offset: %llu\n", i + 1, j + 1,
+		    (u_longlong_t)DVA_GET_ASIZE(&dva),
+		    (u_longlong_t)DVA_GET_VDEV(&dva),
+		    (u_longlong_t)DVA_GET_OFFSET(&dva));
+		printf("|\t\t\t\tbirth: %llu\n",
+		    (u_longlong_t)this_lb.lb_entries[j].le_birth);
+		printf("|\t\t\t\tlsize: %llu\n",
+		    (u_longlong_t)L2BLK_GET_LSIZE(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\tpsize: %llu\n",
+		    (u_longlong_t)L2BLK_GET_PSIZE(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\tcompr: %llu\n",
+		    (u_longlong_t)L2BLK_GET_COMPRESS(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\ttype: %llu\n",
+		    (u_longlong_t)L2BLK_GET_TYPE(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\tprotected: %llu\n",
+		    (u_longlong_t)L2BLK_GET_PROTECTED(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\tprefetch: %llu\n",
+		    (u_longlong_t)L2BLK_GET_PREFETCH(
+		    (&this_lb.lb_entries[j])->le_prop));
+		printf("|\t\t\t\taddress: %llu\n",
+		    (u_longlong_t)this_lb.lb_entries[j].le_daddr);
+		printf("|\n");
+	}
+	printf("\n");
+}
+
+static void
+dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
+{
+	print_l2arc_log_blocks();
+	l2arc_log_blk_phys_t this_lb;
+	uint64_t psize;
+	l2arc_log_blkptr_t lbps[2];
+	abd_t *abd;
+	int i;
+
+	bcopy((&l2dhdr)->dh_start_lbps, lbps, sizeof (lbps));
+
+	for (i = 0; i < l2dhdr.dh_log_blk_count; i++) {
+
+		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
+		pread64(fd, &this_lb, psize, lbps[0].lbp_daddr);
+
+		switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
+		case ZIO_COMPRESS_OFF:
+			break;
+		case ZIO_COMPRESS_LZ4:
+			abd = abd_alloc_for_io(psize, B_TRUE);
+			abd_copy_from_buf_off(abd, &this_lb, 0, psize);
+			zio_decompress_data(L2BLK_GET_COMPRESS(
+			    (&lbps[0])->lbp_prop), abd, &this_lb, psize,
+			    sizeof (this_lb));
+			abd_free(abd);
+			break;
+		default:
+			break;
+		}
+
+		if (this_lb.lb_magic == BSWAP_64(L2ARC_LOG_BLK_MAGIC))
+			byteswap_uint64_array(&this_lb, psize);
+
+		if (this_lb.lb_magic != L2ARC_LOG_BLK_MAGIC)
+			return;
+
+		(void) printf("lb[%d]	magic: %llu\n", i + 1,
+		    (u_longlong_t)this_lb.lb_magic);
+		(void) printf("|    \tdaddr: %llu\n",
+		    (u_longlong_t)lbps[0].lbp_daddr);
+		(void) printf("|    \tlsize: %llu\n",
+		    (u_longlong_t)L2BLK_GET_LSIZE((&lbps[0])->lbp_prop));
+		(void) printf("|    \tpsize: %llu\n",
+		    (u_longlong_t)L2BLK_GET_PSIZE((&lbps[0])->lbp_prop));
+		(void) printf("|    \tcompralgo: %llu\n",
+		    (u_longlong_t)L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop));
+		(void) printf("|    \tcksumalgo: %llu\n",
+		    (u_longlong_t)L2BLK_GET_CHECKSUM((&lbps[0])->lbp_prop));
+		(void) printf("|\n");
+
+		if (dump_opt['l'] > 2)
+			dump_l2arc_log_entries(l2dhdr, this_lb, i);
+
+		lbps[0] = lbps[1];
+		lbps[1] = this_lb.lb_prev_lbp;
+	}
+	(void) printf("%d log blocks dumped\n", i);
+}
+
+static void
 dump_l2arc_header(int fd)
 {
-	l2arc_dev_hdr_phys_t hdr;
+	l2arc_dev_hdr_phys_t l2dhdr;
 
-	if (pread64(fd, &hdr, sizeof (hdr),
-	    VDEV_LABEL_START_SIZE) == sizeof (hdr)) {
+	if (pread64(fd, &l2dhdr, sizeof (l2dhdr),
+	    VDEV_LABEL_START_SIZE) == sizeof (l2dhdr)) {
 
-		if (hdr.dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
-			byteswap_uint64_array(&hdr, sizeof (hdr));
+		if (l2dhdr.dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
+			byteswap_uint64_array(&l2dhdr, sizeof (l2dhdr));
 
-		if (hdr.dh_magic == L2ARC_DEV_HDR_MAGIC) {
+		if (l2dhdr.dh_magic == L2ARC_DEV_HDR_MAGIC) {
 
 			if (dump_opt['q'])
 				return;
 
 			print_l2arc_header();
 			(void) printf("    magic: %llu\n",
-			    (u_longlong_t)hdr.dh_magic);
+			    (u_longlong_t)l2dhdr.dh_magic);
 			(void) printf("    version: %llu\n",
-			    (u_longlong_t)hdr.dh_version);
+			    (u_longlong_t)l2dhdr.dh_version);
 			(void) printf("    pool_guid: %llu\n",
-			    (u_longlong_t)hdr.dh_spa_guid);
+			    (u_longlong_t)l2dhdr.dh_spa_guid);
 			(void) printf("    flags: %llu\n",
-			    (u_longlong_t)hdr.dh_flags);
+			    (u_longlong_t)l2dhdr.dh_flags);
 			(void) printf("    start_lbps[0]: %llu\n",
 			    (u_longlong_t)
-			    hdr.dh_start_lbps[0].lbp_daddr);
+			    l2dhdr.dh_start_lbps[0].lbp_daddr);
 			(void) printf("    start_lbps[1]: %llu\n",
 			    (u_longlong_t)
-			    hdr.dh_start_lbps[1].lbp_daddr);
+			    l2dhdr.dh_start_lbps[1].lbp_daddr);
 			(void) printf("    log_blk_count: %llu\n",
-			    (u_longlong_t)hdr.dh_log_blk_count);
+			    (u_longlong_t)l2dhdr.dh_log_blk_count);
 			(void) printf("    log_blk_ent: %llu\n",
-			    (u_longlong_t)hdr.dh_log_blk_ent);
+			    (u_longlong_t)l2dhdr.dh_log_blk_ent);
 			(void) printf("    evict: %llu\n",
-			    (u_longlong_t)hdr.dh_evict);
+			    (u_longlong_t)l2dhdr.dh_evict);
 			(void) printf("\n");
+
+			if (dump_opt['l'] > 1)
+				dump_l2arc_log_blocks(fd, l2dhdr);
 		}
 	}
 }
