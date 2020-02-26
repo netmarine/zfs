@@ -3497,35 +3497,35 @@ dump_l2arc_log_entries(uint64_t log_entries,
 {
 	for (int j = 0; j < log_entries; j++) {
 		dva_t dva = le[j].le_dva;
-		printf("lb[%d]\t\tle[%d]\t\tDVA asize: %llu, vdev: %llu,"
-		    "offset: %llu\n", i + 1, j + 1,
+		(void) printf("lb[%d]\t\tle[%d]\t\tDVA asize: %llu,"
+		    "vdev: %llu, offset: %llu\n", i + 1, j + 1,
 		    (u_longlong_t)DVA_GET_ASIZE(&dva),
 		    (u_longlong_t)DVA_GET_VDEV(&dva),
 		    (u_longlong_t)DVA_GET_OFFSET(&dva));
-		printf("|\t\t\t\tbirth: %llu\n", (u_longlong_t)le[j].le_birth);
-		printf("|\t\t\t\tlsize: %llu\n",
+		(void) printf("|\t\t\t\tbirth: %llu\n",
+		    (u_longlong_t)le[j].le_birth);
+		(void) printf("|\t\t\t\tlsize: %llu\n",
 		    (u_longlong_t)L2BLK_GET_LSIZE((&le[j])->le_prop));
-		printf("|\t\t\t\tpsize: %llu\n",
+		(void) printf("|\t\t\t\tpsize: %llu\n",
 		    (u_longlong_t)L2BLK_GET_PSIZE((&le[j])->le_prop));
-		printf("|\t\t\t\tcompr: %llu\n",
+		(void) printf("|\t\t\t\tcompr: %llu\n",
 		    (u_longlong_t)L2BLK_GET_COMPRESS((&le[j])->le_prop));
-		printf("|\t\t\t\ttype: %llu\n",
+		(void) printf("|\t\t\t\ttype: %llu\n",
 		    (u_longlong_t)L2BLK_GET_TYPE((&le[j])->le_prop));
-		printf("|\t\t\t\tprotected: %llu\n",
+		(void) printf("|\t\t\t\tprotected: %llu\n",
 		    (u_longlong_t)L2BLK_GET_PROTECTED((&le[j])->le_prop));
-		printf("|\t\t\t\tprefetch: %llu\n",
+		(void) printf("|\t\t\t\tprefetch: %llu\n",
 		    (u_longlong_t)L2BLK_GET_PREFETCH((&le[j])->le_prop));
-		printf("|\t\t\t\taddress: %llu\n",
+		(void) printf("|\t\t\t\taddress: %llu\n",
 		    (u_longlong_t)le[j].le_daddr);
-		printf("|\n");
+		(void) printf("|\n");
 	}
-	printf("\n");
+	(void) printf("\n");
 }
 
 static void
 dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 {
-	print_l2arc_log_blocks();
 	l2arc_log_blk_phys_t this_lb;
 	uint64_t psize;
 	l2arc_log_blkptr_t lbps[2];
@@ -3533,10 +3533,10 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	zio_cksum_t cksum;
 	int i, failed = 0;
 
+	print_l2arc_log_blocks();
 	bcopy((&l2dhdr)->dh_start_lbps, lbps, sizeof (lbps));
 
 	for (i = 0; i < l2dhdr.dh_log_blk_count; i++) {
-
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 		if (pread64(fd, &this_lb, psize,
 		    lbps[0].lbp_daddr) == psize) {
