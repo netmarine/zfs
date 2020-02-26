@@ -3597,10 +3597,11 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	(void) printf("\n");
 }
 
-static void
+static boolean_t
 dump_l2arc_header(int fd)
 {
 	l2arc_dev_hdr_phys_t l2dhdr;
+	int error = B_FALSE;
 
 	if (pread64(fd, &l2dhdr, sizeof (l2dhdr),
 	    VDEV_LABEL_START_SIZE) == sizeof (l2dhdr)) {
@@ -3608,12 +3609,13 @@ dump_l2arc_header(int fd)
 		if (l2dhdr.dh_magic == BSWAP_64(L2ARC_DEV_HDR_MAGIC))
 			byteswap_uint64_array(&l2dhdr, sizeof (l2dhdr));
 
-		if (l2dhdr.dh_magic == L2ARC_DEV_HDR_MAGIC) {
+		if (l2dhdr.dh_magic != L2ARC_DEV_HDR_MAGIC) {
+			error = B_TRUE;
+		}
 
-			if (dump_opt['q'])
-				return;
-
+		if (!dump_opt['q']) {
 			print_l2arc_header();
+
 			(void) printf("    magic: %llu\n",
 			    (u_longlong_t)l2dhdr.dh_magic);
 			(void) printf("    version: %llu\n",
@@ -3639,7 +3641,17 @@ dump_l2arc_header(int fd)
 			if (dump_opt['l'] > 1)
 				dump_l2arc_log_blocks(fd, l2dhdr);
 		}
+	} else {
+		error = B_TRUE;
 	}
+
+	if (error) {
+		(void) printf("invalid L2ARC device header\n");
+		(void) printf("\n");
+		return (error);
+	}
+
+	return (error);
 }
 
 static void
@@ -3811,6 +3823,7 @@ dump_label(const char *dev)
 	struct stat64 statbuf;
 	boolean_t config_found = B_FALSE;
 	boolean_t error = B_FALSE;
+	boolean_t l2arc_header = B_FALSE;
 	avl_tree_t config_tree;
 	avl_tree_t uberblock_tree;
 	void *node, *cookie;
@@ -3900,6 +3913,11 @@ dump_label(const char *dev)
 			    ZPOOL_CONFIG_ASHIFT, &ashift) != 0))
 				ashift = SPA_MINBLOCKSHIFT;
 
+			if (!l2arc_header)
+				(void) (nvlist_lookup_boolean_value(config,
+				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
+				    &l2arc_header));
+
 			if (nvlist_size(config, &size, NV_ENCODE_XDR) != 0)
 				size = buflen;
 
@@ -3931,11 +3949,6 @@ dump_label(const char *dev)
 	}
 
 	/*
-	 * Dump the L2ARC header, if existent.
-	 */
-	dump_l2arc_header(fd);
-
-	/*
 	 * Dump the label and uberblocks.
 	 */
 	for (int l = 0; l < VDEV_LABELS; l++) {
@@ -3957,6 +3970,12 @@ dump_label(const char *dev)
 
 		nvlist_free(label->config_nv);
 	}
+
+	/*
+	 * Dump the L2ARC header, if existent.
+	 */
+	if (l2arc_header)
+		error |= dump_l2arc_header(fd);
 
 	cookie = NULL;
 	while ((node = avl_destroy_nodes(&config_tree, &cookie)) != NULL)
