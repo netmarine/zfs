@@ -3492,38 +3492,31 @@ print_l2arc_log_blocks(void)
 }
 
 static void
-dump_l2arc_log_entries(l2arc_dev_hdr_phys_t l2dhdr,
-    l2arc_log_blk_phys_t this_lb, int i)
+dump_l2arc_log_entries(uint64_t log_entries,
+    l2arc_log_ent_phys_t *le, int i)
 {
-	for (int j = 0; j < l2dhdr.dh_log_blk_ent; j++) {
-		dva_t dva = this_lb.lb_entries[j].le_dva;
+	for (int j = 0; j < log_entries; j++) {
+		dva_t dva = le[j].le_dva;
 		printf("lb[%d]\t\tle[%d]\t\tDVA asize: %llu, vdev: %llu,"
 		    "offset: %llu\n", i + 1, j + 1,
 		    (u_longlong_t)DVA_GET_ASIZE(&dva),
 		    (u_longlong_t)DVA_GET_VDEV(&dva),
 		    (u_longlong_t)DVA_GET_OFFSET(&dva));
-		printf("|\t\t\t\tbirth: %llu\n",
-		    (u_longlong_t)this_lb.lb_entries[j].le_birth);
+		printf("|\t\t\t\tbirth: %llu\n", (u_longlong_t)le[j].le_birth);
 		printf("|\t\t\t\tlsize: %llu\n",
-		    (u_longlong_t)L2BLK_GET_LSIZE(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_LSIZE((&le[j])->le_prop));
 		printf("|\t\t\t\tpsize: %llu\n",
-		    (u_longlong_t)L2BLK_GET_PSIZE(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_PSIZE((&le[j])->le_prop));
 		printf("|\t\t\t\tcompr: %llu\n",
-		    (u_longlong_t)L2BLK_GET_COMPRESS(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_COMPRESS((&le[j])->le_prop));
 		printf("|\t\t\t\ttype: %llu\n",
-		    (u_longlong_t)L2BLK_GET_TYPE(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_TYPE((&le[j])->le_prop));
 		printf("|\t\t\t\tprotected: %llu\n",
-		    (u_longlong_t)L2BLK_GET_PROTECTED(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_PROTECTED((&le[j])->le_prop));
 		printf("|\t\t\t\tprefetch: %llu\n",
-		    (u_longlong_t)L2BLK_GET_PREFETCH(
-		    (&this_lb.lb_entries[j])->le_prop));
+		    (u_longlong_t)L2BLK_GET_PREFETCH((&le[j])->le_prop));
 		printf("|\t\t\t\taddress: %llu\n",
-		    (u_longlong_t)this_lb.lb_entries[j].le_daddr);
+		    (u_longlong_t)le[j].le_daddr);
 		printf("|\n");
 	}
 	printf("\n");
@@ -3537,7 +3530,9 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	uint64_t psize;
 	l2arc_log_blkptr_t lbps[2];
 	abd_t *abd;
-	int i;
+	zio_cksum_t cksum;
+	int i, failed = 0;
+	boolean_t wrong_cksum = B_FALSE;
 
 	bcopy((&l2dhdr)->dh_start_lbps, lbps, sizeof (lbps));
 
@@ -3545,6 +3540,13 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 		pread64(fd, &this_lb, psize, lbps[0].lbp_daddr);
+
+		fletcher_4_native_varsize(&this_lb, psize, &cksum);
+		if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
+			failed++;
+			wrong_cksum = B_TRUE;
+			continue;
+		}
 
 		switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
 		case ZIO_COMPRESS_OFF:
@@ -3579,15 +3581,18 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		    (u_longlong_t)L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop));
 		(void) printf("|    \tcksumalgo: %llu\n",
 		    (u_longlong_t)L2BLK_GET_CHECKSUM((&lbps[0])->lbp_prop));
+		(void) printf("|    \twrong cksum: %d\n", wrong_cksum);
 		(void) printf("|\n");
 
 		if (dump_opt['l'] > 2)
-			dump_l2arc_log_entries(l2dhdr, this_lb, i);
+			dump_l2arc_log_entries(l2dhdr.dh_log_blk_ent,
+			    this_lb.lb_entries, i);
 
 		lbps[0] = lbps[1];
 		lbps[1] = this_lb.lb_prev_lbp;
 	}
-	(void) printf("%d log blocks dumped\n", i);
+	(void) printf("%d out of %d log blocks dumped\n",
+	    (int)l2dhdr.dh_log_blk_count - failed, i);
 }
 
 static void
