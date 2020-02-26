@@ -2964,59 +2964,70 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	for (i = 0; i < l2dhdr.dh_log_blk_count; i++) {
 
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
-		pread64(fd, &this_lb, psize, lbps[0].lbp_daddr);
+		if (pread64(fd, &this_lb, psize,
+		    lbps[0].lbp_daddr) == psize) {
 
-		fletcher_4_native_varsize(&this_lb, psize, &cksum);
+			fletcher_4_native_varsize(&this_lb, psize, &cksum);
 
-		switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
-		case ZIO_COMPRESS_OFF:
-			break;
-		case ZIO_COMPRESS_LZ4:
-			abd = abd_alloc_for_io(psize, B_TRUE);
-			abd_copy_from_buf_off(abd, &this_lb, 0, psize);
-			zio_decompress_data(L2BLK_GET_COMPRESS(
-			    (&lbps[0])->lbp_prop), abd, &this_lb, psize,
-			    sizeof (this_lb));
-			abd_free(abd);
-			break;
-		default:
-			break;
-		}
+			switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
+			case ZIO_COMPRESS_OFF:
+				break;
+			case ZIO_COMPRESS_LZ4:
+				abd = abd_alloc_for_io(psize, B_TRUE);
+				abd_copy_from_buf_off(abd, &this_lb, 0, psize);
+				zio_decompress_data(L2BLK_GET_COMPRESS(
+				    (&lbps[0])->lbp_prop), abd, &this_lb, psize,
+				    sizeof (this_lb));
+				abd_free(abd);
+				break;
+			default:
+				break;
+			}
 
-		if (this_lb.lb_magic == BSWAP_64(L2ARC_LOG_BLK_MAGIC))
-			byteswap_uint64_array(&this_lb, psize);
+			if (this_lb.lb_magic == BSWAP_64(L2ARC_LOG_BLK_MAGIC))
+				byteswap_uint64_array(&this_lb, psize);
 
-		if (this_lb.lb_magic != L2ARC_LOG_BLK_MAGIC)
-			return;
+			if (this_lb.lb_magic != L2ARC_LOG_BLK_MAGIC) {
+				(void) printf("Invalid log block magic\n");
+				break;
+			}
 
-		(void) printf("lb[%d]	magic: %llu\n", i + 1,
-		    (u_longlong_t)this_lb.lb_magic);
-		(void) printf("|    \tdaddr: %llu\n",
-		    (u_longlong_t)lbps[0].lbp_daddr);
-		(void) printf("|    \tlsize: %llu\n",
-		    (u_longlong_t)L2BLK_GET_LSIZE((&lbps[0])->lbp_prop));
-		(void) printf("|    \tpsize: %llu\n",
-		    (u_longlong_t)L2BLK_GET_PSIZE((&lbps[0])->lbp_prop));
-		(void) printf("|    \tcompralgo: %llu\n",
-		    (u_longlong_t)L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop));
-		(void) printf("|    \tcksumalgo: %llu\n",
-		    (u_longlong_t)L2BLK_GET_CHECKSUM((&lbps[0])->lbp_prop));
+			(void) printf("lb[%d]	magic: %llu\n", i + 1,
+			    (u_longlong_t)this_lb.lb_magic);
+			(void) printf("|    \tdaddr: %llu\n",
+			    (u_longlong_t)lbps[0].lbp_daddr);
+			(void) printf("|    \tlsize: %llu\n",
+			    (u_longlong_t)L2BLK_GET_LSIZE(
+			    (&lbps[0])->lbp_prop));
+			(void) printf("|    \tpsize: %llu\n",
+			    (u_longlong_t)L2BLK_GET_PSIZE(
+			    (&lbps[0])->lbp_prop));
+			(void) printf("|    \tcompralgo: %llu\n",
+			    (u_longlong_t)L2BLK_GET_COMPRESS(
+			    (&lbps[0])->lbp_prop));
+			(void) printf("|    \tcksumalgo: %llu\n",
+			    (u_longlong_t)L2BLK_GET_CHECKSUM(
+			    (&lbps[0])->lbp_prop));
 
-		if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
-			failed++;
-			(void) printf("|    \t!! invalid cksum\n");
+			if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
+				failed++;
+				(void) printf("|    \t!! invalid cksum\n");
+			} else {
+				(void) printf("|    \tvalid cksum\n");
+			}
+
+			(void) printf("|\n");
+
+			if (dump_opt['l'] > 2)
+				dump_l2arc_log_entries(l2dhdr.dh_log_blk_ent,
+				    this_lb.lb_entries, i);
+
+			lbps[0] = lbps[1];
+			lbps[1] = this_lb.lb_prev_lbp;
 		} else {
-			(void) printf("|    \tvalid cksum\n");
+			(void) printf("Error while reading next log block\n");
+			break;
 		}
-
-		(void) printf("|\n");
-
-		if (dump_opt['l'] > 2)
-			dump_l2arc_log_entries(l2dhdr.dh_log_blk_ent,
-			    this_lb.lb_entries, i);
-
-		lbps[0] = lbps[1];
-		lbps[1] = this_lb.lb_prev_lbp;
 	}
 	(void) printf("%d out of %d log blocks dumped\n",
 	    (int)l2dhdr.dh_log_blk_count - failed, i);
