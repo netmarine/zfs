@@ -2923,7 +2923,7 @@ dump_l2arc_log_entries(uint64_t log_entries,
 {
 	for (int j = 0; j < log_entries; j++) {
 		dva_t dva = le[j].le_dva;
-		(void) printf("lb[%d]\t\tle[%d]\t\tDVA asize: %llu,"
+		(void) printf("lb[%4d]\tle[%4d]\tDVA asize: %llu,"
 		    "vdev: %llu, offset: %llu\n", i + 1, j + 1,
 		    (u_longlong_t)DVA_GET_ASIZE(&dva),
 		    (u_longlong_t)DVA_GET_VDEV(&dva),
@@ -2992,28 +2992,28 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 				break;
 			}
 
-			(void) printf("lb[%d]	magic: %llu\n", i + 1,
+			(void) printf("lb[%4d]\tmagic: %llu\n", i + 1,
 			    (u_longlong_t)this_lb.lb_magic);
-			(void) printf("|    \tdaddr: %llu\n",
+			(void) printf("|\t\tdaddr: %llu\n",
 			    (u_longlong_t)lbps[0].lbp_daddr);
-			(void) printf("|    \tlsize: %llu\n",
+			(void) printf("|\t\tlsize: %llu\n",
 			    (u_longlong_t)L2BLK_GET_LSIZE(
 			    (&lbps[0])->lbp_prop));
-			(void) printf("|    \tpsize: %llu\n",
+			(void) printf("|\t\tpsize: %llu\n",
 			    (u_longlong_t)L2BLK_GET_PSIZE(
 			    (&lbps[0])->lbp_prop));
-			(void) printf("|    \tcompralgo: %llu\n",
+			(void) printf("|\t\tcompralgo: %llu\n",
 			    (u_longlong_t)L2BLK_GET_COMPRESS(
 			    (&lbps[0])->lbp_prop));
-			(void) printf("|    \tcksumalgo: %llu\n",
+			(void) printf("|\t\tcksumalgo: %llu\n",
 			    (u_longlong_t)L2BLK_GET_CHECKSUM(
 			    (&lbps[0])->lbp_prop));
 
 			if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
 				failed++;
-				(void) printf("|    \t!! invalid cksum\n");
+				(void) printf("|\t\t!! invalid cksum\n");
 			} else {
-				(void) printf("|    \tvalid cksum\n");
+				(void) printf("|\t\tvalid cksum\n");
 			}
 
 			(void) printf("|\n");
