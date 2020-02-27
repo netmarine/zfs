@@ -191,8 +191,8 @@ typedef struct l2arc_log_blkptr {
 	uint64_t	lbp_daddr;
 	/*
 	 * lbp_prop has the following format:
-	 *	* logical size (in sectors)
-	 *	* physical (compressed) size (in sectors)
+	 *	* logical size (in bytes)
+	 *	* physical (compressed) size (in bytes)
 	 *	* compression algorithm (we always LZ4-compress l2arc logs)
 	 *	* checksum algorithm (used for lbp_cksum)
 	 */
@@ -235,8 +235,8 @@ typedef struct l2arc_log_ent_phys {
 	uint64_t		le_birth;	/* birth txg of buffer */
 	/*
 	 * le_prop has the following format:
-	 *	* logical size (in sectors)
-	 *	* physical (compressed) size (in sectors)
+	 *	* logical size (in bytes)
+	 *	* physical (compressed) size (in bytes)
 	 *	* compression algorithm
 	 *	* object type (used to restore arc_buf_contents_t)
 	 *	* protected status (used for encryption)
