@@ -23,16 +23,15 @@
 
 #
 # DESCRIPTION:
-#	Off/onlining an L2ARC device results in rebuilding L2ARC, vdev not
-#	present.
+#	Off/onlining an L2ARC device results in rebuilding L2ARC, vdev present.
 #
 # STRATEGY:
 #	1. Create pool with a cache device.
 #	2. Create a random file in that pool and random read for 30 sec.
 #	3. Read the amount of log blocks written from the header of the
 #		L2ARC device.
-#	4. Offline the L2ARC device and export pool.
-#	5. Import pool and online the L2ARC device.
+#	4. Offline the L2ARC device.
+#	5. Online the L2ARC device.
 #	6. Read the amount of log blocks rebuilt in arcstats and compare to
 #		(3).
 #	7. Check if the labels of the L2ARC device are intact.
@@ -73,7 +72,6 @@ log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool offline $TESTPOOL $VDEV_CACHE
-log_must zpool export $TESTPOOL
 
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
@@ -81,7 +79,6 @@ typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
 	| awk '{print $3}')
 
-log_must zpool import -d $VDIR $TESTPOOL
 log_must zpool online $TESTPOOL $VDEV_CACHE
 
 sleep 5
@@ -95,4 +92,4 @@ log_must zdb -lq $VDEV_CACHE
 
 log_must zpool destroy -f $TESTPOOL
 
-log_pass "Off/onlining an L2ARC device results in rebuilding L2ARC, vdev not present."
+log_pass "Off/onlining an L2ARC device results in rebuilding L2ARC, vdev present."
