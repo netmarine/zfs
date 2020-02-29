@@ -3645,6 +3645,8 @@ dump_l2arc_header(int fd)
 			    (u_longlong_t)l2dhdr.dh_log_blk_count);
 			(void) printf("    log_blk_ent: %llu\n",
 			    (u_longlong_t)l2dhdr.dh_log_blk_ent);
+			(void) printf("    evict: %llu\n",
+			    (u_longlong_t)l2dhdr.dh_evict);
 			(void) printf("\n");
 
 			if (dump_opt['l'] > 1)
