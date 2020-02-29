@@ -8686,8 +8686,6 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
-	taddr = MAX(dev->l2ad_dev_hdr->dh_evict, taddr);
-
 	/*
 	 * Trim the space to be evicted. Check that we do not evict the whole
 	 * device and that it has trim.
@@ -9182,13 +9180,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		ASSERT(!HDR_HAS_L1HDR(head));
 		kmem_cache_free(hdr_l2only_cache, head);
 
-		/*
-		 * Although we did not write any buffers, vdev_trim_last_offset
-		 * may still have advanced. Update the L2ARC device header.
-		 */
-		if (dev->l2ad_vdev->vdev_trim_last_offset > l2dhdr->dh_evict)
-			l2arc_dev_hdr_update(dev);
-
 		return (0);
 	}
 
@@ -9203,8 +9194,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * If log_entries = 0 also update the header here,
 	 * otherwise it will not be updated.
 	 */
-	if (dev_hdr_update || l2dhdr->dh_log_blk_ent == 0 ||
-	    dev->l2ad_vdev->vdev_trim_last_offset > l2dhdr->dh_evict)
+	if (dev_hdr_update || l2dhdr->dh_log_blk_ent == 0)
 		l2arc_dev_hdr_update(dev);
 
 	/*
@@ -9215,7 +9205,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_vdev->vdev_trim_last_offset = dev->l2ad_start;
-		l2dhdr->dh_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
@@ -9704,10 +9693,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	vd->vdev_trim_last_offset = MAX(l2dhdr->dh_evict, dev->l2ad_start);
 	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
 	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
+	vd->vdev_trim_last_offset = dev->l2ad_hand;
 	dev->l2ad_first = !!(l2dhdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
 
@@ -9844,16 +9833,9 @@ out:
 	if (dev->l2ad_hand + l2arc_write_size() +
 	    l2arc_log_blk_overhead(l2arc_write_size(), dev) >=
 	    dev->l2ad_end) {
-		/*
-		 * If vdev_trim_last_offset was after l2ad_hand reset it too.
-		 */
-		if (dev->l2ad_hand < dev->l2ad_vdev->vdev_trim_last_offset) {
-			dev->l2ad_vdev->vdev_trim_last_offset =
-			    dev->l2ad_start;
-			l2dhdr->dh_evict = dev->l2ad_start;
-		}
-
 		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_vdev->vdev_trim_last_offset =
+			    dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
@@ -9903,9 +9885,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	if (l2dhdr->dh_magic != L2ARC_DEV_HDR_MAGIC ||
 	    l2dhdr->dh_spa_guid != guid ||
 	    l2dhdr->dh_version != L2ARC_PERSISTENT_VERSION ||
-	    l2dhdr->dh_log_blk_ent != dev->l2ad_log_entries ||
-	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
-	    l2dhdr->dh_evict)) {
+	    l2dhdr->dh_log_blk_ent != dev->l2ad_log_entries) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
 		 * or containing a header from some other pool or from another
@@ -10203,7 +10183,6 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	l2dhdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 	l2dhdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
-	l2dhdr->dh_evict = dev->l2ad_vdev->vdev_trim_last_offset;
 	l2dhdr->dh_log_blk_ent = dev->l2ad_log_entries;
 	l2dhdr->dh_flags = 0;
 	if (dev->l2ad_first)
@@ -10340,20 +10319,14 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
 	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
 	uint64_t end = lbp->lbp_daddr + psize;
-	boolean_t trimmed;
 
 	/*
 	 * A log block is valid if all of the following conditions are true:
 	 * - it fits entirely between l2ad_start and l2ad_end
 	 * - it has a valid size
-	 * - it was not trimmed by l2arc_evict()
 	 */
-	trimmed = l2arc_range_check_overlap(dev->l2ad_hand,
-	    dev->l2ad_vdev->vdev_trim_last_offset,
-	    lbp->lbp_daddr);
-
 	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
-	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) && !trimmed);
+	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t));
 }
 
 /*
