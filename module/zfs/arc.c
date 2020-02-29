@@ -10106,7 +10106,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
-	ARCSTAT_INCR(arcstat_l2_psize, asize);
+	ARCSTAT_INCR(arcstat_l2_psize, HDR_GET_PSIZE(hdr));
 
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_tail(&dev->l2ad_buflist, hdr);
