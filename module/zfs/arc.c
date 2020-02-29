@@ -9101,7 +9101,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 			vdev_clear_stats(dev->l2ad_vdev);
 			l2arc_dev_create_lists(dev);
 			vdev_space_update(vd, 0, 0,
-			    dev->l2ad_end - dev->l2ad_hand);
+			    dev->l2ad_end - dev->l2ad_start);
 		}
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
