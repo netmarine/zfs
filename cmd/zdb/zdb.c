@@ -3030,7 +3030,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		}
 	}
 	(void) printf("%d out of %d log blocks dumped\n",
-	    (int)l2dhdr.dh_log_blk_count - failed, i);
+	    i - failed, (int)l2dhdr.dh_log_blk_count);
 	(void) printf("\n");
 }
 
