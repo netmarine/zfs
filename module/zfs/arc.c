@@ -8974,11 +8974,6 @@ l2arc_vdev_get(vdev_t *vd)
 	return (dev);
 }
 
-static inline void
-l2arc_dev_clear_lists(l2arc_dev_t *dev)
-{
-}
-
 /*
  * Add a vdev for use by the L2ARC.  By this point the spa has already
  * validated the vdev and opened it. The `rebuild' flag indicates whether
@@ -9029,6 +9024,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
 	zfs_refcount_create(&adddev->l2ad_alloc);
 	zfs_refcount_create(&adddev->l2ad_log_blk_count);
+
 	/*
 	 * Add device to global list
 	 */
@@ -9123,7 +9119,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 void
 l2arc_remove_vdev(vdev_t *vd)
 {
-	l2arc_dev_t		*remdev = NULL;
+	l2arc_dev_t *remdev = NULL;
 
 	/*
 	 * Find the device by vdev
