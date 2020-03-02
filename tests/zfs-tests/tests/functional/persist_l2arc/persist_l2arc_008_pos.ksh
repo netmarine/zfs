@@ -134,6 +134,8 @@ typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/
 
 log_must zpool import -d $VDIR $TESTPOOL
 
+sleep 5
+
 typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
 	| awk '{print $3}')
 
