@@ -9425,7 +9425,6 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 	spa = dev->l2ad_spa;
 	l2dhdr = dev->l2ad_dev_hdr;
 	l2dhdr_asize = dev->l2ad_dev_hdr_asize;
-	dev->l2ad_reopen = reopen;
 
 	/*
 	 * The L2ARC has to hold at least the payload of one log block for
@@ -9467,8 +9466,12 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 		 * ARC buffers and pointers to log blocks and reclaim their
 		 * space before restoring its contents to L2ARC.
 		 */
-		if (dev->l2ad_reopen)
+		if (reopen) {
 			l2arc_evict(dev, 0, B_TRUE);
+			/* start a new log block */
+			dev->l2ad_log_ent_idx = 0;
+			dev->l2ad_log_blk_payload_asize = 0;
+		}
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
@@ -9682,14 +9685,12 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	if (!dev->l2ad_reopen) {
-		dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
-		    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
-		    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
-		vd->vdev_trim_last_offset = dev->l2ad_hand;
-		dev->l2ad_first = !!(l2dhdr->dh_flags &
-		    L2ARC_DEV_HDR_EVICT_FIRST);
-	}
+	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
+	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
+	vd->vdev_trim_last_offset = dev->l2ad_hand;
+	dev->l2ad_first = !!(l2dhdr->dh_flags &
+	    L2ARC_DEV_HDR_EVICT_FIRST);
 
 	/* Prepare the rebuild processing state */
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
@@ -9819,10 +9820,9 @@ out:
 	/*
 	 * If l2ad_hand is at the end of the device with no space
 	 * left to accommodate upcoming writes, we reset it to l2ad_start,
-	 * like l2arc_write_buffers() does. If this is a reopen leave
-	 * l2ad_hand, l2ad_evict and l2ad_first at their current state.
+	 * like l2arc_write_buffers() does.
 	 */
-	if (!dev->l2ad_reopen && (dev->l2ad_hand + l2arc_write_size() +
+	if ((dev->l2ad_hand + l2arc_write_size() +
 	    l2arc_log_blk_overhead(l2arc_write_size(), dev)) >=
 	    dev->l2ad_end) {
 
