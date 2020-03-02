@@ -39,7 +39,7 @@
 
 verify_runnable "global"
 
-log_assert "Off/onlining an L2ARC device results in rebuilding L2ARC."
+log_assert "Off/onlining an L2ARC device results in rebuilding L2ARC, vdev present."
 
 function cleanup
 {
@@ -72,6 +72,8 @@ log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool offline $TESTPOOL $VDEV_CACHE
+
+sleep 2
 
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')

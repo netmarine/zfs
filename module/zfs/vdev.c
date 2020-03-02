@@ -2284,9 +2284,9 @@ vdev_reopen(vdev_t *vd)
 			 * When reopening we can assume the device label has
 			 * already the attribute l2cache_persistent, since we've
 			 * opened the device in the past and updated the label.
-			 * In case the vdev was present we have to recreate the
-			 * lists and counters of ARC buffers and pointers to log
-			 * blocks.
+			 * In case the vdev is present we should evict all ARC
+			 * buffers and pointers to log blocks and reclaim their
+			 * space before restoring its contents to L2ARC.
 			 */
 			if (l2arc_vdev_present(vd)) {
 				l2arc_rebuild_vdev(vd, B_TRUE, B_TRUE);

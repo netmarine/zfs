@@ -8,7 +8,8 @@ dist_pkgdata_SCRIPTS = \
 	persist_l2arc_004_pos.ksh \
 	persist_l2arc_005_pos.ksh \
 	persist_l2arc_006_pos.ksh \
-	persist_l2arc_007_pos.ksh
+	persist_l2arc_007_pos.ksh \
+	persist_l2arc_008_pos.ksh
 
 dist_pkgdata_DATA = \
 	persist_l2arc.cfg

@@ -40,7 +40,7 @@
 
 verify_runnable "global"
 
-log_assert "Off/onlining an L2ARC device results in rebuilding L2ARC."
+log_assert "Off/onlining an L2ARC device results in rebuilding L2ARC, vdev not present."
 
 function cleanup
 {
