@@ -9343,35 +9343,8 @@ l2arc_vdev_get(vdev_t *vd)
 }
 
 static inline void
-l2arc_dev_create_lists(l2arc_dev_t *dev)
-{
-	/*
-	 * This is a list of all ARC buffers that are still valid on the
-	 * device.
-	 */
-	list_create(&dev->l2ad_buflist, sizeof (arc_buf_hdr_t),
-	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
-
-	/*
-	 * This is a list of pointers to log blocks that are still present
-	 * on the device.
-	 */
-	list_create(&dev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
-	    offsetof(l2arc_lb_ptr_buf_t, node));
-
-	zfs_refcount_create(&dev->l2ad_alloc);
-	zfs_refcount_create(&dev->l2ad_log_blk_count);
-}
-
-static inline void
 l2arc_dev_clear_lists(l2arc_dev_t *dev)
 {
-	l2arc_evict(dev, 0, B_TRUE);
-	list_destroy(&dev->l2ad_buflist);
-	ASSERT(list_is_empty(&dev->l2ad_lbptr_list));
-	list_destroy(&dev->l2ad_lbptr_list);
-	zfs_refcount_destroy(&dev->l2ad_alloc);
-	zfs_refcount_destroy(&dev->l2ad_log_blk_count);
 }
 
 /*
@@ -9407,8 +9380,23 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	vd->vdev_trim_last_offset = adddev->l2ad_start;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
-	l2arc_dev_create_lists(adddev);
+	/*
+	 * This is a list of all ARC buffers that are still valid on the
+	 * device.
+	 */
+	list_create(&adddev->l2ad_buflist, sizeof (arc_buf_hdr_t),
+	    offsetof(arc_buf_hdr_t, b_l2hdr.b_l2node));
+
+	/*
+	 * This is a list of pointers to log blocks that are still present
+	 * on the device.
+	 */
+	list_create(&adddev->l2ad_lbptr_list, sizeof (l2arc_lb_ptr_buf_t),
+	    offsetof(l2arc_lb_ptr_buf_t, node));
+
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
+	zfs_refcount_create(&adddev->l2ad_alloc);
+	zfs_refcount_create(&adddev->l2ad_log_blk_count);
 	/*
 	 * Add device to global list
 	 */
@@ -9437,6 +9425,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 	spa = dev->l2ad_spa;
 	l2dhdr = dev->l2ad_dev_hdr;
 	l2dhdr_asize = dev->l2ad_dev_hdr_asize;
+	dev->l2ad_reopen = reopen;
 
 	/*
 	 * The L2ARC has to hold at least the payload of one log block for
@@ -9474,17 +9463,12 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 		dev->l2ad_rebuild = B_TRUE;
 		/*
 		 * If we are onlining a cache device (vdev_reopen) that was
-		 * still present (l2arc_vdev_present), we should reset the
-		 * lists and counters of ARC buffers and pointers to log blocks
-		 * before restoring its contents to L2ARC.
+		 * still present (l2arc_vdev_present()), we should evict all
+		 * ARC buffers and pointers to log blocks and reclaim their
+		 * space before restoring its contents to L2ARC.
 		 */
-		if (reopen) {
-			l2arc_dev_clear_lists(dev);
-			vdev_clear_stats(dev->l2ad_vdev);
-			l2arc_dev_create_lists(dev);
-			vdev_space_update(vd, 0, 0,
-			    dev->l2ad_end - dev->l2ad_start);
-		}
+		if (dev->l2ad_reopen)
+			l2arc_evict(dev, 0, B_TRUE);
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if the device label is missing
@@ -9535,8 +9519,13 @@ l2arc_remove_vdev(vdev_t *vd)
 	/*
 	 * Clear all buflists and ARC references.  L2ARC device flush.
 	 */
-	l2arc_dev_clear_lists(remdev);
+	l2arc_evict(remdev, 0, B_TRUE);
+	list_destroy(&remdev->l2ad_buflist);
+	ASSERT(list_is_empty(&remdev->l2ad_lbptr_list));
+	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
+	zfs_refcount_destroy(&remdev->l2ad_alloc);
+	zfs_refcount_destroy(&remdev->l2ad_log_blk_count);
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
 	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
@@ -9693,12 +9682,14 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	lock_held = B_TRUE;
 
 	/* Retrieve the persistent L2ARC device state */
-	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
-	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
-	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
-	vd->vdev_trim_last_offset = dev->l2ad_hand;
-	dev->l2ad_first = !!(l2dhdr->dh_flags &
-	    L2ARC_DEV_HDR_EVICT_FIRST);
+	if (!dev->l2ad_reopen) {
+		dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
+		    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
+		    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
+		vd->vdev_trim_last_offset = dev->l2ad_hand;
+		dev->l2ad_first = !!(l2dhdr->dh_flags &
+		    L2ARC_DEV_HDR_EVICT_FIRST);
+	}
 
 	/* Prepare the rebuild processing state */
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
@@ -9828,11 +9819,13 @@ out:
 	/*
 	 * If l2ad_hand is at the end of the device with no space
 	 * left to accommodate upcoming writes, we reset it to l2ad_start,
-	 * like l2arc_write_buffers() does.
+	 * like l2arc_write_buffers() does. If this is a reopen leave
+	 * l2ad_hand, l2ad_evict and l2ad_first at their current state.
 	 */
-	if (dev->l2ad_hand + l2arc_write_size() +
-	    l2arc_log_blk_overhead(l2arc_write_size(), dev) >=
+	if (!dev->l2ad_reopen && (dev->l2ad_hand + l2arc_write_size() +
+	    l2arc_log_blk_overhead(l2arc_write_size(), dev)) >=
 	    dev->l2ad_end) {
+
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_vdev->vdev_trim_last_offset =
 			    dev->l2ad_start;
@@ -10117,6 +10110,25 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	if (exists) {
 		/* Buffer was already cached, no need to restore it. */
 		arc_hdr_destroy(hdr);
+		/*
+		 * If the buffer is already cached, check whether it has
+		 * L2ARC metadata. If not, enter them and update the flag.
+		 * This is important is case of onlining a cache device, since
+		 * we previously evicted all L2ARC metadata from ARC.
+		 */
+		if (!HDR_HAS_L2HDR(exists)) {
+			arc_hdr_set_flags(exists, ARC_FLAG_HAS_L2HDR);
+			exists->b_l2hdr.b_dev = dev;
+			exists->b_l2hdr.b_daddr = le->le_daddr;
+			mutex_enter(&dev->l2ad_mtx);
+			list_insert_tail(&dev->l2ad_buflist, exists);
+			(void) zfs_refcount_add_many(&dev->l2ad_alloc,
+			    arc_hdr_size(exists), exists);
+			mutex_exit(&dev->l2ad_mtx);
+			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
+			ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(exists));
+			ARCSTAT_INCR(arcstat_l2_psize, HDR_GET_PSIZE(exists));
+		}
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
 	}
 
