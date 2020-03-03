@@ -27,12 +27,40 @@
 #define	_SYS_VDEV_TRIM_H
 
 #include <sys/spa.h>
+#include <sys/range_tree.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
+/*
+ * The trim_args are a control structure which describe how a leaf vdev
+ * should be trimmed.  The core elements are the vdev, the metaslab being
+ * trimmed and a range tree containing the extents to TRIM.  All provided
+ * ranges must be within the metaslab.
+ */
+typedef struct trim_args {
+	/*
+	 * These fields are set by the caller of vdev_trim_ranges().
+	 */
+	vdev_t		*trim_vdev;		/* Leaf vdev to TRIM */
+	metaslab_t	*trim_msp;		/* Disabled metaslab */
+	range_tree_t	*trim_tree;		/* TRIM ranges (in metaslab) */
+	trim_type_t	trim_type;		/* Manual or auto TRIM */
+	uint64_t	trim_extent_bytes_max;	/* Maximum TRIM I/O size */
+	uint64_t	trim_extent_bytes_min;	/* Minimum TRIM I/O size */
+	enum trim_flag	trim_flags;		/* TRIM flags (secure) */
+
+	/*
+	 * These fields are updated by vdev_trim_ranges().
+	 */
+	hrtime_t	trim_start_time;	/* Start time */
+	uint64_t	trim_bytes_done;	/* Bytes trimmed */
+} trim_args_t;
+
 extern unsigned int zfs_trim_metaslab_skip;
+extern unsigned int zfs_trim_extent_bytes_max;
+extern unsigned int zfs_trim_extent_bytes_min;
 
 extern void vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial,
     boolean_t secure);
@@ -44,8 +72,7 @@ extern void vdev_autotrim(spa_t *spa);
 extern void vdev_autotrim_stop_all(spa_t *spa);
 extern void vdev_autotrim_stop_wait(vdev_t *vd);
 extern void vdev_autotrim_restart(spa_t *spa);
-extern int vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size,
-    trim_type_t type);
+extern int vdev_trim_ranges(trim_args_t *ta);
 
 #ifdef	__cplusplus
 }

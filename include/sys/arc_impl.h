@@ -31,6 +31,8 @@
 
 #include <sys/arc.h>
 #include <sys/zio_crypt.h>
+#include <sys/vdev_trim.h>
+#include <sys/range_tree.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -351,6 +353,7 @@ typedef struct l2arc_dev {
 	/* list of pointers to log blocks present in the L2ARC device */
 	list_t			l2ad_lbptr_list;
 	zfs_refcount_t		l2ad_log_blk_count;  /* allocated log blocks */
+	trim_args_t		*l2ad_ta;
 } l2arc_dev_t;
 
 /*
