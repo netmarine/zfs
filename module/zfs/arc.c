@@ -9078,7 +9078,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	if ((err = l2arc_dev_hdr_read(dev)) != 0)
 		rebuild = B_FALSE;
 
-	if (rebuild && l2arc_rebuild_enabled && l2dhdr->dh_log_blk_ent > 0 &&
+	if (rebuild && l2dhdr->dh_log_blk_ent > 0 &&
 	    l2dhdr->dh_log_blk_count > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
@@ -9292,7 +9292,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 {
 	vdev_t			*vd = dev->l2ad_vdev;
 	spa_t			*spa = vd->vdev_spa;
-	int			err;
+	int			err = 0;
 	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
@@ -9322,6 +9322,9 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
 	dev->l2ad_first = !!(l2dhdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
+
+	if (!l2arc_rebuild_enabled)
+		goto out;
 
 	/* Prepare the rebuild processing state */
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
@@ -9437,15 +9440,20 @@ out:
 		l2arc_log_blk_fetch_abort(next_io);
 	vmem_free(this_lb, sizeof (*this_lb));
 	vmem_free(next_lb, sizeof (*next_lb));
-	if (err == 0) {
+
+	if (!l2arc_rebuild_enabled) {
+		zfs_dbgmsg("L2ARC rebuild disabled");
+	} else if (err == 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
 		zfs_dbgmsg("L2ARC successfully rebuilt");
 	} else {
-		zfs_dbgmsg("L2ARC not successfully rebuilt");
+		zfs_dbgmsg("L2ARC rebuild encountered errors");
 	}
 
-	if (err != SET_ERROR(ENOMEM))
+	if (l2arc_rebuild_enabled && err != SET_ERROR(ENOMEM) &&
+	    !dev->l2ad_rebuild_cancel) {
 		l2arc_dev_hdr_update(dev);
+	}
 
 	/*
 	 * If l2ad_hand is at the end of the device with no space
@@ -10029,10 +10037,10 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
  * range. The trick here is that the L2ARC is a rotary buffer, so we can't
  * just do a range comparison, we need to handle the situation in which the
  * range wraps around the end of the L2ARC device. Arguments:
- *	bottom	Lower end of the range to check (written to earlier).
- *	top	Upper end of the range to check (written to later).
- *	check	The address for which we want to determine if it sits in
- *		between the top and bottom.
+ *	bottom -- Lower end of the range to check (written to earlier).
+ *	top    -- Upper end of the range to check (written to later).
+ *	check  -- The address for which we want to determine if it sits in
+ *		  between the top and bottom.
  *
  * The 3-way conditional below represents the following cases:
  *
