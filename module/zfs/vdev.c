@@ -2279,9 +2279,9 @@ vdev_reopen(vdev_t *vd)
 			 * space before restoring its contents to L2ARC.
 			 */
 			if (l2arc_vdev_present(vd)) {
-				l2arc_rebuild_vdev(vd, B_TRUE, B_TRUE);
+				l2arc_rebuild_vdev(vd, B_TRUE);
 			} else {
-				l2arc_add_vdev(spa, vd, B_TRUE);
+				l2arc_add_vdev(spa, vd);
 			}
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 		}

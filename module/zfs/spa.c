@@ -1796,14 +1796,8 @@ spa_load_l2cache(spa_t *spa)
 
 			(void) vdev_validate_aux(vd);
 
-			if (!vdev_is_dead(vd)) {
-				boolean_t do_rebuild = B_FALSE;
-
-				(void) nvlist_lookup_boolean_value(l2cache[i],
-				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
-				    &do_rebuild);
-				l2arc_add_vdev(spa, vd, do_rebuild);
-			}
+			if (!vdev_is_dead(vd))
+				l2arc_add_vdev(spa, vd);
 		}
 	}
 

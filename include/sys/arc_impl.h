@@ -190,6 +190,14 @@ typedef struct l2arc_log_blkptr {
 	 */
 	uint64_t	lbp_daddr;
 	/*
+	 * Aligned payload size (in bytes) of the log block
+	 */
+	uint64_t	lbp_payload_asize;
+	/*
+	 * Offset in bytes of the first buffer in the payload
+	 */
+	uint64_t	lbp_payload_start;
+	/*
 	 * lbp_prop has the following format:
 	 *	* logical size (in sectors)
 	 *	* physical (compressed) size (in sectors)
@@ -212,16 +220,23 @@ typedef struct l2arc_dev_hdr_phys {
 	 * Global L2ARC device state and metadata.
 	 */
 	uint64_t	dh_spa_guid;
-	uint64_t	dh_log_blk_count;	/* allocated log blocks */
+	uint64_t	dh_vdev_guid;
+	uint64_t	dh_log_blk_ent;		/* entries per log blk */
+	uint64_t	dh_evict;		/* evicted offset in bytes */
 	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
+	/*
+	 * Used in zdb.c for determining if a log block is valid, in the same
+	 * way that l2arc_rebuild() does.
+	 */
+	uint64_t	dh_start;
+	uint64_t	dh_end;
 
 	/*
 	 * Start of log block chain. [0] -> newest log, [1] -> one older (used
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	const uint64_t		dh_pad[41];	/* pad to 512 bytes */
+	const uint64_t		dh_pad[34];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
@@ -266,7 +281,7 @@ typedef struct l2arc_log_blk_phys {
 	/*
 	 * Pad header section to 128 bytes
 	 */
-	uint64_t		lb_pad[9];
+	uint64_t		lb_pad[7];
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;				/* 128K total */
@@ -343,17 +358,22 @@ typedef struct l2arc_dev {
 	uint64_t		l2ad_dev_hdr_asize; /* aligned hdr size */
 	l2arc_log_blk_phys_t	l2ad_log_blk;	/* currently open log block */
 	int			l2ad_log_ent_idx; /* index into cur log blk */
-	/* number of bytes in current log block's payload */
+	/* Number of bytes in current log block's payload */
 	uint64_t		l2ad_log_blk_payload_asize;
-	/* flag indicating whether a rebuild is scheduled or is going on */
+	/*
+	 * Offset (in bytes) of the first buffer in current log block's
+	 * payload.
+	 */
+	uint64_t		l2ad_log_blk_payload_start;
+	/* Flag indicating whether a rebuild is scheduled or is going on */
 	boolean_t		l2ad_rebuild;
 	boolean_t		l2ad_rebuild_cancel;
 	boolean_t		l2ad_rebuild_began;
 	uint64_t		l2ad_log_entries;   /* entries per log blk  */
-	/* list of pointers to log blocks present in the L2ARC device */
-	list_t			l2ad_lbptr_list;
-	zfs_refcount_t		l2ad_log_blk_count;  /* allocated log blocks */
 	trim_args_t		*l2ad_ta;
+	uint64_t		l2ad_evict;	 /* evicted offset in bytes */
+	/* List of pointers to log blocks present in the L2ARC device */
+	list_t			l2ad_lbptr_list;
 } l2arc_dev_t;
 
 /*
@@ -787,6 +807,10 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_sys_free;
 	kstat_named_t arcstat_raw_size;
 } arc_stats_t;
+
+/* used in zdb.c */
+boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lbp);
 
 #ifdef __cplusplus
 }

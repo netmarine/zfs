@@ -99,6 +99,7 @@ typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/ar
 	| awk '{print $3}')
 
 log_must test $l2_dh_log_blk1 -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
+log_must test $l2_dh_log_blk1 -gt 0
 
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
@@ -138,6 +139,7 @@ typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/ar
 	| awk '{print $3}')
 
 log_must test $l2_dh_log_blk3 -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
+log_must test $l2_dh_log_blk3 -gt 0
 
 log_must zdb -lq $VDEV_CACHE
 
