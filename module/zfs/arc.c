@@ -9130,13 +9130,13 @@ l2arc_remove_vdev(vdev_t *vd)
 	/*
 	 * Cancel any ongoing or scheduled rebuild.
 	 */
+	mutex_enter(&l2arc_rebuild_thr_lock);
 	if (remdev->l2ad_rebuild_began == B_TRUE) {
 		remdev->l2ad_rebuild_cancel = B_TRUE;
-		mutex_enter(&l2arc_rebuild_thr_lock);
 		while (remdev->l2ad_rebuild == B_TRUE)
 			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
-		mutex_exit(&l2arc_rebuild_thr_lock);
 	}
+	mutex_exit(&l2arc_rebuild_thr_lock);
 
 	/*
 	 * Remove device from global list
@@ -9251,11 +9251,14 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			/* Don't attempt a rebuild if the vdev is UNAVAIL */
 			continue;
 		}
+		mutex_enter(&l2arc_rebuild_thr_lock);
 		if (dev->l2ad_rebuild && !dev->l2ad_rebuild_cancel) {
+			dev->l2ad_rebuild_began = B_TRUE;
 			(void) thread_create(NULL, 0,
 			    (void (*)(void *))l2arc_dev_rebuild_start,
 			    dev, 0, &p0, TS_RUN, minclsyspri);
 		}
+		mutex_exit(&l2arc_rebuild_thr_lock);
 	}
 }
 
@@ -9265,13 +9268,13 @@ l2arc_spa_rebuild_start(spa_t *spa)
 static void
 l2arc_dev_rebuild_start(l2arc_dev_t *dev)
 {
-	if (!dev->l2ad_rebuild_cancel) {
-		VERIFY(dev->l2ad_rebuild);
-		dev->l2ad_rebuild_began = B_TRUE;
-		(void) l2arc_rebuild(dev);
-		dev->l2ad_rebuild_began = B_FALSE;
-		dev->l2ad_rebuild = B_FALSE;
-	}
+	VERIFY(!dev->l2ad_rebuild_cancel);
+	VERIFY(dev->l2ad_rebuild);
+	(void) l2arc_rebuild(dev);
+	mutex_enter(&l2arc_rebuild_thr_lock);
+	dev->l2ad_rebuild_began = B_FALSE;
+	dev->l2ad_rebuild = B_FALSE;
+	mutex_exit(&l2arc_rebuild_thr_lock);
 
 	thread_exit();
 }
@@ -9395,14 +9398,15 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
 
 		for (;;) {
+			mutex_enter(&l2arc_rebuild_thr_lock);
 			if (dev->l2ad_rebuild_cancel) {
-				mutex_enter(&l2arc_rebuild_thr_lock);
 				dev->l2ad_rebuild = B_FALSE;
 				cv_signal(&l2arc_rebuild_thr_cv);
 				mutex_exit(&l2arc_rebuild_thr_lock);
 				err = SET_ERROR(ECANCELED);
 				goto out;
 			}
+			mutex_exit(&l2arc_rebuild_thr_lock);
 			if (spa_config_tryenter(spa, SCL_L2ARC, vd,
 			    RW_READER)) {
 				lock_held = B_TRUE;
