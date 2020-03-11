@@ -692,7 +692,6 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_CONFIG_PHYS_PATH		"phys_path"
 #define	ZPOOL_CONFIG_IS_LOG		"is_log"
 #define	ZPOOL_CONFIG_L2CACHE		"l2cache"
-#define	ZPOOL_CONFIG_L2CACHE_PERSISTENT	"l2cache_persistent"
 #define	ZPOOL_CONFIG_HOLE_ARRAY		"hole_array"
 #define	ZPOOL_CONFIG_VDEV_CHILDREN	"vdev_children"
 #define	ZPOOL_CONFIG_IS_HOLE		"is_hole"

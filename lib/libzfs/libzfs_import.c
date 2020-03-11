@@ -38,6 +38,7 @@
 #include <libzfs.h>
 #include <libzfs_impl.h>
 #include <libzutil.h>
+#include <sys/arc_impl.h>
 
 /*
  * Returns true if the named pool matches the given GUID.
@@ -146,19 +147,23 @@ zpool_clear_label(int fd)
 	struct stat64 statbuf;
 	int l;
 	vdev_label_t *label;
+	l2arc_dev_hdr_phys_t *l2dhdr;
 	uint64_t size;
 	int labels_cleared = 0;
+	boolean_t clear_l2arc_header = B_FALSE;
 
 	if (fstat64_blk(fd, &statbuf) == -1)
 		return (0);
 
 	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
 
-	if ((label = calloc(1, sizeof (vdev_label_t))) == NULL)
+	if ((label = calloc(1, sizeof (vdev_label_t))) == NULL ||
+	    (l2dhdr = calloc(1, sizeof (l2arc_dev_hdr_phys_t))) == NULL) {
 		return (-1);
+	}
 
 	for (l = 0; l < VDEV_LABELS; l++) {
-		uint64_t state, guid;
+		uint64_t state, guid, l2cache;
 		nvlist_t *config;
 
 		if (pread64(fd, label, sizeof (vdev_label_t),
@@ -185,6 +190,12 @@ zpool_clear_label(int fd)
 			continue;
 		}
 
+		/* If the device is a cache device clear the header. */
+		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
+		    &l2cache) != 0 || l2cache == POOL_STATE_L2CACHE) {
+			clear_l2arc_header = B_TRUE;
+		}
+
 		nvlist_free(config);
 
 		/*
@@ -202,7 +213,15 @@ zpool_clear_label(int fd)
 		}
 	}
 
+	/* Clear the L2ARC header. */
+	if (clear_l2arc_header) {
+		memset(l2dhdr, 0, sizeof (l2arc_dev_hdr_phys_t));
+		(void) pwrite64(fd, l2dhdr, sizeof (l2arc_dev_hdr_phys_t),
+		    VDEV_LABEL_START_SIZE);
+	}
+
 	free(label);
+	free(l2dhdr);
 
 	if (labels_cleared == 0)
 		return (-1);

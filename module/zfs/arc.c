@@ -879,7 +879,7 @@ int l2arc_rebuild_enabled = B_TRUE;
 unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
 /* L2ARC persistence rebuild control routines. */
-void l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen);
+void l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen);
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
 static int l2arc_rebuild(l2arc_dev_t *dev);
 
@@ -8976,11 +8976,10 @@ l2arc_vdev_get(vdev_t *vd)
 
 /*
  * Add a vdev for use by the L2ARC.  By this point the spa has already
- * validated the vdev and opened it. The `rebuild' flag indicates whether
- * we should attempt a persistent L2ARC rebuild.
+ * validated the vdev and opened it.
  */
 void
-l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
+l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 {
 	l2arc_dev_t		*adddev;
 	uint64_t		l2dhdr_asize;
@@ -9036,17 +9035,18 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd, boolean_t rebuild)
 	/*
 	 * Decide if vdev is eligible for L2ARC rebuild
 	 */
-	l2arc_rebuild_vdev(adddev->l2ad_vdev, rebuild, B_FALSE);
+	l2arc_rebuild_vdev(adddev->l2ad_vdev, B_FALSE);
 }
 
 void
-l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
+l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 {
 	l2arc_dev_t		*dev = NULL;
 	l2arc_dev_hdr_phys_t	*l2dhdr;
 	uint64_t		l2dhdr_asize;
 	spa_t			*spa;
 	int			err;
+	boolean_t		rebuild = B_TRUE;
 
 	dev = l2arc_vdev_get(vd);
 	ASSERT3P(dev, !=, NULL);
@@ -9075,9 +9075,8 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 	/*
 	 * Read the device header, if an error is returned do not rebuild L2ARC.
 	 */
-	if ((err = l2arc_dev_hdr_read(dev)) != 0) {
+	if ((err = l2arc_dev_hdr_read(dev)) != 0)
 		rebuild = B_FALSE;
-	}
 
 	if (rebuild && l2arc_rebuild_enabled && l2dhdr->dh_log_blk_ent > 0 &&
 	    l2dhdr->dh_log_blk_count > 0) {
@@ -9102,10 +9101,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t rebuild, boolean_t reopen)
 		}
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
-		 * The boolean rebuild is false if the device label is missing
-		 * l2cache_persistent (or was just created) or if reading the
-		 * device header returned an error. In this case create a new
-		 * header. We zero out the memory holding the header to reset
+		 * The boolean rebuild is false if reading the device header
+		 * returned an error. In this case create a new header. We
+		 * zero out the memory holding the header to reset
 		 * dh_start_lbps.
 		 */
 		bzero(l2dhdr, l2dhdr_asize);

@@ -1122,10 +1122,6 @@ make_vdev_root(char *path, char *aux, char *pool, size_t size, uint64_t ashift,
 		    r, m);
 		VERIFY(nvlist_add_uint64(child[c], ZPOOL_CONFIG_IS_LOG,
 		    log) == 0);
-		if (aux != NULL && strcmp(aux, ZPOOL_CONFIG_L2CACHE) == 0) {
-			VERIFY(nvlist_add_boolean_value(child[c],
-			    ZPOOL_CONFIG_L2CACHE_PERSISTENT, B_TRUE) == 0);
-		}
 
 		if (class != NULL && class[0] != '\0') {
 			ASSERT(m > 1 || log);   /* expecting a mirror */

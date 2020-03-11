@@ -3624,7 +3624,7 @@ dump_l2arc_header(int fd)
 			error = B_TRUE;
 		}
 
-		if (!dump_opt['q']) {
+		if (!dump_opt['q'] && !error) {
 			print_l2arc_header();
 
 			(void) printf("    magic: %llu\n",
@@ -3834,7 +3834,6 @@ dump_label(const char *dev)
 	struct stat64 statbuf;
 	boolean_t config_found = B_FALSE;
 	boolean_t error = B_FALSE;
-	boolean_t l2arc_header = B_FALSE;
 	avl_tree_t config_tree;
 	avl_tree_t uberblock_tree;
 	void *node, *cookie;
@@ -3924,11 +3923,6 @@ dump_label(const char *dev)
 			    ZPOOL_CONFIG_ASHIFT, &ashift) != 0))
 				ashift = SPA_MINBLOCKSHIFT;
 
-			if (!l2arc_header)
-				(void) (nvlist_lookup_boolean_value(config,
-				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
-				    &l2arc_header));
-
 			if (nvlist_size(config, &size, NV_ENCODE_XDR) != 0)
 				size = buflen;
 
@@ -3985,8 +3979,7 @@ dump_label(const char *dev)
 	/*
 	 * Dump the L2ARC header, if existent.
 	 */
-	if (l2arc_header)
-		error |= dump_l2arc_header(fd);
+	error |= dump_l2arc_header(fd);
 
 	cookie = NULL;
 	while ((node = avl_destroy_nodes(&config_tree, &cookie)) != NULL)

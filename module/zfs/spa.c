@@ -1894,14 +1894,8 @@ spa_load_l2cache(spa_t *spa)
 
 			(void) vdev_validate_aux(vd);
 
-			if (!vdev_is_dead(vd)) {
-				boolean_t do_rebuild = B_FALSE;
-
-				(void) nvlist_lookup_boolean_value(l2cache[i],
-				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
-				    &do_rebuild);
-				l2arc_add_vdev(spa, vd, do_rebuild);
-			}
+			if (!vdev_is_dead(vd))
+				l2arc_add_vdev(spa, vd);
 		}
 	}
 
@@ -6518,6 +6512,7 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_event_notify(spa, NULL, NULL, ESC_ZFS_VDEV_ADD);
 	mutex_exit(&spa_namespace_lock);
 
+	spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 	return (0);
 }
 

@@ -508,11 +508,6 @@ vdev_config_generate(spa_t *spa, vdev_t *vd, boolean_t getstats,
 		}
 	}
 
-	if (flags & VDEV_CONFIG_L2CACHE)
-		/* indicate that we support L2ARC persistence */
-		fnvlist_add_boolean_value(nv, ZPOOL_CONFIG_L2CACHE_PERSISTENT,
-		    B_TRUE);
-
 	if (vd->vdev_dtl_sm != NULL) {
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_DTL,
 		    space_map_object(vd->vdev_dtl_sm));
@@ -1086,10 +1081,6 @@ vdev_label_init(vdev_t *vd, uint64_t crtxg, vdev_labeltype_t reason)
 		    POOL_STATE_L2CACHE) == 0);
 		VERIFY(nvlist_add_uint64(label, ZPOOL_CONFIG_GUID,
 		    vd->vdev_guid) == 0);
-
-		/* indicate that we support L2ARC persistence */
-		VERIFY(nvlist_add_boolean_value(label,
-		    ZPOOL_CONFIG_L2CACHE_PERSISTENT, B_TRUE) == 0);
 	} else {
 		uint64_t txg = 0ULL;
 
