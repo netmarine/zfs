@@ -7955,8 +7955,6 @@ top:
 		zio_buf_free(abd_buf, sizeof (*abd_buf));
 		if (zio->io_error != 0) {
 			lb_ptr_buf = list_remove_head(&dev->l2ad_lbptr_list);
-			zfs_refcount_remove(&dev->l2ad_log_blk_count,
-			    lb_ptr_buf);
 			bytes_dropped +=
 			    L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 			kmem_free(lb_ptr_buf->lb_ptr,
@@ -8350,8 +8348,6 @@ top:
 			    -L2BLK_GET_PSIZE(
 			    (lb_ptr_buf->lb_ptr)->lbp_prop), 0, 0);
 			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
-			zfs_refcount_remove(&dev->l2ad_log_blk_count,
-			    lb_ptr_buf);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
 			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
@@ -9022,7 +9018,6 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 
 	vdev_space_update(vd, 0, 0, adddev->l2ad_end - adddev->l2ad_hand);
 	zfs_refcount_create(&adddev->l2ad_alloc);
-	zfs_refcount_create(&adddev->l2ad_log_blk_count);
 
 	/*
 	 * Add device to global list
@@ -9078,10 +9073,6 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	if ((err = l2arc_dev_hdr_read(dev)) != 0)
 		rebuild = B_FALSE;
 
-	/*
-	 * We do not take into account dh_log_blk_count because in case of
-	 * memory pressure this may have been set to 0.
-	 */
 	if (rebuild && l2dhdr->dh_log_blk_ent > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
@@ -9157,7 +9148,6 @@ l2arc_remove_vdev(vdev_t *vd)
 	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
-	zfs_refcount_destroy(&remdev->l2ad_log_blk_count);
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
 	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
@@ -9392,7 +9382,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		mutex_enter(&dev->l2ad_mtx);
 		list_insert_tail(&dev->l2ad_lbptr_list, lb_ptr_buf);
 		mutex_exit(&dev->l2ad_mtx);
-		zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 		vdev_space_update(vd,
 		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
 
@@ -9840,7 +9829,6 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	l2dhdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
 	l2dhdr->dh_vdev_guid = dev->l2ad_vdev->vdev_guid;
-	l2dhdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
 	l2dhdr->dh_log_blk_ent = dev->l2ad_log_entries;
 	l2dhdr->dh_evict = dev->l2ad_evict;
 	l2dhdr->dh_start = dev->l2ad_start;
@@ -9955,7 +9943,6 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_head(&dev->l2ad_lbptr_list, lb_ptr_buf);
 	mutex_exit(&dev->l2ad_mtx);
-	zfs_refcount_add(&dev->l2ad_log_blk_count, lb_ptr_buf);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	/* bump the kstats */

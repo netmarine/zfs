@@ -3677,8 +3677,6 @@ dump_l2arc_header(int fd)
 			(void) printf("    start_lbps[1]: %llu\n",
 			    (u_longlong_t)
 			    l2dhdr.dh_start_lbps[1].lbp_daddr);
-			(void) printf("    log_blk_cdount: %llu\n",
-			    (u_longlong_t)l2dhdr.dh_log_blk_count);
 			(void) printf("    log_blk_ent: %llu\n",
 			    (u_longlong_t)l2dhdr.dh_log_blk_ent);
 			(void) printf("    start: %llu\n",
