@@ -331,15 +331,20 @@ For cache devices smaller than 1GB we do not write the metadata structures
 required for rebuilding the L2ARC in order not to waste space. This can be
 changed with
 .Sy l2arc_rebuild_blocks_min_l2size .
-Setting
+The cache device header (512 bytes) is updated even if no metadata structures
+are written. Setting
 .Sy l2arc_headroom = 0
 will result in scanning the full-length ARC lists for cacheable content to be
 written in L2ARC (persistent ARC). If a cache device is added with
 .Nm zpool Cm add
-its contents are going to be restored in L2ARC, if the device was previously
-part of the pool. If a cache device is onlined with
+its label and header will be overwritten and its contents are not going to be
+restored in L2ARC, even if the device was previously part of the pool. If a
+cache device is onlined with
 .Nm zpool Cm online
-its contents will also be restored in L2ARC.
+its contents will be restored in L2ARC. This is useful in case of memory pressure
+where the contents of the cache device are not fully restored in L2ARC.
+The user can off/online the cache device when there is less memory pressure
+in order to fully restore its contents to L2ARC.
 .Ss Pool checkpoint
 Before starting critical procedures that include destructive actions (e.g
 .Nm zfs Cm destroy

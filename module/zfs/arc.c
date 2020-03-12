@@ -9521,6 +9521,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 
 	if (l2dhdr->dh_magic != L2ARC_DEV_HDR_MAGIC ||
 	    l2dhdr->dh_spa_guid != guid ||
+	    l2dhdr->dh_vdev_guid != dev->l2ad_vdev->vdev_guid ||
 	    l2dhdr->dh_version != L2ARC_PERSISTENT_VERSION ||
 	    l2dhdr->dh_log_blk_ent != dev->l2ad_log_entries ||
 	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
@@ -9840,6 +9841,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
 	l2dhdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	l2dhdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
+	l2dhdr->dh_vdev_guid = dev->l2ad_vdev->vdev_guid;
 	l2dhdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
 	l2dhdr->dh_log_blk_ent = dev->l2ad_log_entries;
 	l2dhdr->dh_evict = dev->l2ad_evict;

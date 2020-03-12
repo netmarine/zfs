@@ -212,7 +212,10 @@ typedef struct l2arc_dev_hdr_phys {
 	 * Global L2ARC device state and metadata.
 	 */
 	uint64_t	dh_spa_guid;
+	uint64_t	dh_vdev_guid;
 	uint64_t	dh_log_blk_count;	/* allocated log blocks */
+	uint64_t	dh_log_blk_ent;		/* entries per log blk */
+	uint64_t	dh_evict;		/* evicted offset in bytes */
 	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
 
 	/*
@@ -220,9 +223,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	uint64_t		dh_log_blk_ent;	/* entries per log blk */
-	uint64_t		dh_evict;	/* evicted offset in bytes */
-	const uint64_t		dh_pad[40];	/* pad to 512 bytes */
+	const uint64_t		dh_pad[39];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
