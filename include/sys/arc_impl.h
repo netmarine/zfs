@@ -217,13 +217,19 @@ typedef struct l2arc_dev_hdr_phys {
 	uint64_t	dh_log_blk_ent;		/* entries per log blk */
 	uint64_t	dh_evict;		/* evicted offset in bytes */
 	uint64_t	dh_flags;		/* l2arc_dev_hdr_flags_t */
+	/*
+	 * Used in zdb.c for determining if a log block is valid, in the same
+	 * way that l2arc_rebuild() does.
+	 */
+	uint64_t	dh_start;
+	uint64_t	dh_end;
 
 	/*
 	 * Start of log block chain. [0] -> newest log, [1] -> one older (used
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	const uint64_t		dh_pad[39];	/* pad to 512 bytes */
+	const uint64_t		dh_pad[37];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);

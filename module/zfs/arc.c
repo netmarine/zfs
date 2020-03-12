@@ -909,7 +909,7 @@ static boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *lp);
 static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
     const arc_buf_hdr_t *ab);
-static inline boolean_t l2arc_range_check_overlap(uint64_t bottom,
+boolean_t l2arc_range_check_overlap(uint64_t bottom,
     uint64_t top, uint64_t check);
 static void l2arc_blk_fetch_done(zio_t *zio);
 
@@ -9336,14 +9336,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	/* Prepare the rebuild process */
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
-	/*
-	 * Start the rebuild process. We do not rely on dh_log_blk_count because
-	 * in case the rebuild process is interrupted due to memory pressure we
-	 * want to be able to restore the remaining valid log blocks in a future
-	 * attempt. Otherwise the device header will be updated when committing
-	 * new log blocks with the number of current log blocks, excluding those
-	 * not restored due to memory pressure.
-	 */
+	/* Start the rebuild process */
 	for (;;) {
 		/* End of list detection */
 		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
@@ -9850,6 +9843,8 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_log_blk_count = zfs_refcount_count(&dev->l2ad_log_blk_count);
 	l2dhdr->dh_log_blk_ent = dev->l2ad_log_entries;
 	l2dhdr->dh_evict = dev->l2ad_evict;
+	l2dhdr->dh_start = dev->l2ad_start;
+	l2dhdr->dh_end = dev->l2ad_end;
 	l2dhdr->dh_flags = 0;
 	if (dev->l2ad_first)
 		l2dhdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
@@ -10068,7 +10063,7 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
  *
  *	top == bottom : Just a single address comparison.
  */
-static inline boolean_t
+boolean_t
 l2arc_range_check_overlap(uint64_t bottom, uint64_t top, uint64_t check)
 {
 	if (bottom < top)
