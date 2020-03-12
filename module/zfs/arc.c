@@ -9078,8 +9078,11 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	if ((err = l2arc_dev_hdr_read(dev)) != 0)
 		rebuild = B_FALSE;
 
-	if (rebuild && l2dhdr->dh_log_blk_ent > 0 &&
-	    l2dhdr->dh_log_blk_count > 0) {
+	/*
+	 * We do not take into account dh_log_blk_count because in case of
+	 * memory pressure this may have been set to 0.
+	 */
+	if (rebuild && l2dhdr->dh_log_blk_ent > 0) {
 		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
@@ -9323,26 +9326,28 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	dev->l2ad_first = !!(l2dhdr->dh_flags &
 	    L2ARC_DEV_HDR_EVICT_FIRST);
 
+	/*
+	 * In case the zfs module parameter l2arc_rebuild_enabled is false
+	 * we do not start the rebuild process.
+	 */
 	if (!l2arc_rebuild_enabled)
 		goto out;
 
-	/* Prepare the rebuild processing state */
+	/* Prepare the rebuild process */
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
-	/* Start the rebuild process */
-	for (int i = 0; i < l2dhdr->dh_log_blk_count; i++) {
-		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0])) {
-			zfs_dbgmsg("L2ARC log block pointer invalid, "
-			    "offset: %llu, vdev guid: %llu, l2ad_start: %llu, "
-			    "l2ad_end: %llu, l2ad_hand: %llu, "
-			    "l2ad_evict: %llu, l2ad_first: %d, lbp_psize: %llu",
-			    lb_ptrs[0].lbp_daddr, dev->l2ad_vdev->vdev_guid,
-			    dev->l2ad_start, dev->l2ad_end, dev->l2ad_hand,
-			    dev->l2ad_evict, dev->l2ad_first,
-			    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop));
-			err = SET_ERROR(EINVAL);
+	/*
+	 * Start the rebuild process. We do not rely on dh_log_blk_count because
+	 * in case the rebuild process is interrupted due to memory pressure we
+	 * want to be able to restore the remaining valid log blocks in a future
+	 * attempt. Otherwise the device header will be updated when committing
+	 * new log blocks with the number of current log blocks, excluding those
+	 * not restored due to memory pressure.
+	 */
+	for (;;) {
+		/* End of list detection */
+		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
 			break;
-		}
 
 		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
 		    this_lb, next_lb, this_io, &next_io)) != 0)
@@ -9366,10 +9371,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		}
 
 		/*
-		 * We have to drop the lock after checking for memory pressure,
-		 * otherwise we goto out and later call l2arc_dev_hdr_update()
-		 * which panics in zio.c because we dropped the lock
-		 * prematurely.
+		 * If we goto out after dropping the lock and call
+		 * l2arc_dev_hdr_update() it panics in zio.c because we dropped
+		 * the lock prematurely. We do not call l2arc_dev_hdr_update()
+		 * in case of memory pressure though.
 		 */
 		spa_config_exit(spa, SCL_L2ARC, vd);
 		lock_held = B_FALSE;
