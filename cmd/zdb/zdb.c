@@ -3527,19 +3527,20 @@ static void
 dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 {
 	l2arc_log_blk_phys_t this_lb;
-	uint64_t psize, l2ad_hand, l2ad_evict, l2ad_start, l2ad_end;
+	uint64_t psize;
 	l2arc_log_blkptr_t lbps[2];
 	abd_t *abd;
 	zio_cksum_t cksum;
 	int i = 0, failed = 0;
-	boolean_t evicted, l2ad_first, inval_cksum;
+	boolean_t inval_cksum;
+	l2arc_dev_t dev;
 
 	print_l2arc_log_blocks();
 	bcopy((&l2dhdr)->dh_start_lbps, lbps, sizeof (lbps));
 
-	l2ad_evict = l2dhdr.dh_evict;
-	l2ad_start = l2dhdr.dh_start;
-	l2ad_end = l2dhdr.dh_end;
+	dev.l2ad_evict = l2dhdr.dh_evict;
+	dev.l2ad_start = l2dhdr.dh_start;
+	dev.l2ad_end = l2dhdr.dh_end;
 
 	if (l2dhdr.dh_start_lbps[0].lbp_daddr == 0) {
 		/* no log blocks to read */
@@ -3547,30 +3548,18 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		(void) printf("\n");
 		return;
 	} else {
-		l2ad_hand = lbps[0].lbp_daddr +
+		dev.l2ad_hand = lbps[0].lbp_daddr +
 		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 	}
 
-	l2ad_first = !!(l2dhdr.dh_flags & L2ARC_DEV_HDR_EVICT_FIRST);
+	dev.l2ad_first = !!(l2dhdr.dh_flags & L2ARC_DEV_HDR_EVICT_FIRST);
 
 	for (i = 0; ; i++) {
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 		if (pread64(fd, &this_lb, psize,
 		    lbps[0].lbp_daddr) == psize) {
 
-			/* This is the same as in l2arc_log_blkptr_valid */
-			evicted = l2arc_range_check_overlap(l2ad_hand,
-			    l2ad_evict, lbps[0].lbp_daddr) ||
-			    l2arc_range_check_overlap(l2ad_hand, l2ad_evict,
-			    lbps[0].lbp_daddr - lbps[0].lbp_payload_asize) ||
-			    l2arc_range_check_overlap(l2ad_hand, l2ad_evict,
-			    lbps[0].lbp_daddr + psize - 1);
-
-			if ((evicted && !l2ad_first) || psize == 0 ||
-			    psize > sizeof (l2arc_log_blk_phys_t) ||
-			    lbps[0].lbp_daddr - lbps[0].lbp_payload_asize <
-			    l2ad_start || (lbps[0].lbp_daddr + psize - 1) >
-			    l2ad_end) {
+			if (!l2arc_log_blkptr_valid(&dev, &lbps[0])) {
 				/* end of list */
 				break;
 			}

@@ -905,8 +905,8 @@ static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
     l2arc_write_callback_t *cb);
 
 /* L2ARC persistence auxilliary routines. */
-static boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
-    const l2arc_log_blkptr_t *lp);
+boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lbp);
 static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
     const arc_buf_hdr_t *ab);
 boolean_t l2arc_range_check_overlap(uint64_t bottom,
@@ -8578,7 +8578,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 {
 	arc_buf_hdr_t 		*hdr, *hdr_prev, *head;
 	uint64_t 		write_asize, write_psize, write_lsize, headroom;
-	boolean_t		full, dev_hdr_update;
+	boolean_t		full;
 	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_write_callback_t	*cb = NULL;
 	zio_t 			*pio, *wzio;
@@ -8589,7 +8589,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	pio = NULL;
 	write_lsize = write_asize = write_psize = 0;
 	full = B_FALSE;
-	dev_hdr_update = B_FALSE;
 	head = kmem_cache_alloc(hdr_l2only_cache, KM_PUSHPAGE);
 	arc_hdr_set_flags(head, ARC_FLAG_L2_WRITE_HEAD | ARC_FLAG_HAS_L2HDR);
 
@@ -8777,10 +8776,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			 * arcstat_l2_{size,asize} kstats are updated
 			 * internally.
 			 */
-			if (l2arc_log_blk_insert(dev, hdr)) {
+			if (l2arc_log_blk_insert(dev, hdr))
 				l2arc_log_blk_commit(dev, pio, cb);
-				dev_hdr_update = B_TRUE;
-			}
 
 			zio_nowait(wzio);
 		}
@@ -8799,10 +8796,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 		/*
 		 * Although we did not write any buffers l2ad_evict may
-		 * have advanced. If true update the L2ARC device header.
+		 * have advanced.
 		 */
-		if (dev->l2ad_evict > l2dhdr->dh_evict)
-			l2arc_dev_hdr_update(dev);
+		l2arc_dev_hdr_update(dev);
 
 		return (0);
 	}
@@ -8813,14 +8809,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ARCSTAT_INCR(arcstat_l2_lsize, write_lsize);
 	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
 
-	/*
-	 * If we have written log blocks update the L2ARC device header.
-	 * If log_entries = 0 also update the header here,
-	 * otherwise it will not be updated.
-	 */
-	if (dev_hdr_update || l2dhdr->dh_log_blk_ent == 0 ||
-	    dev->l2ad_evict > l2dhdr->dh_evict)
-		l2arc_dev_hdr_update(dev);
+	l2arc_dev_hdr_update(dev);
 
 	/*
 	 * Bump device hand to the device start if it is approaching the end.
@@ -9350,12 +9339,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			goto out;
 		}
 
-		/*
-		 * If we goto out after dropping the lock and call
-		 * l2arc_dev_hdr_update() it panics in zio.c because we dropped
-		 * the lock prematurely. We do not call l2arc_dev_hdr_update()
-		 * in case of memory pressure though.
-		 */
 		spa_config_exit(spa, SCL_L2ARC, vd);
 		lock_held = B_FALSE;
 
@@ -9431,12 +9414,7 @@ out:
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
 		zfs_dbgmsg("L2ARC successfully rebuilt");
 	} else if (err != 0) {
-		zfs_dbgmsg("L2ARC rebuild encountered errors");
-	}
-
-	if (l2arc_rebuild_enabled && err != SET_ERROR(ENOMEM) &&
-	    !dev->l2ad_rebuild_cancel) {
-		l2arc_dev_hdr_update(dev);
+		zfs_dbgmsg("L2ARC rebuild aborted");
 	}
 
 	/*
@@ -9960,7 +9938,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
  * Validates an L2ARC log block address to make sure that it can be read
  * from the provided L2ARC device.
  */
-static boolean_t
+boolean_t
 l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
 	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
@@ -9987,8 +9965,9 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 *				|		log block
 	 *				payload
 	 */
-	evicted = l2arc_range_check_overlap(dev->l2ad_hand,
-	    dev->l2ad_evict, lbp->lbp_daddr) ||
+	evicted =
+	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict,
+	    lbp->lbp_daddr) ||
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, end) ||
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, start);
 

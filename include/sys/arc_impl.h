@@ -859,6 +859,10 @@ extern void arc_tuning_update(void);
 extern int param_set_arc_long(const char *buf, zfs_kernel_param_t *kp);
 extern int param_set_arc_int(const char *buf, zfs_kernel_param_t *kp);
 
+/* used in zdb.c */
+boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lbp);
+
 #ifdef __cplusplus
 }
 #endif
