@@ -190,6 +190,10 @@ typedef struct l2arc_log_blkptr {
 	 */
 	uint64_t	lbp_daddr;
 	/*
+	 * Aligned payload size (in bytes) of the log block
+	 */
+	uint64_t	lbp_payload_asize;
+	/*
 	 * lbp_prop has the following format:
 	 *	* logical size (in bytes)
 	 *	* physical (compressed) size (in bytes)
@@ -228,7 +232,7 @@ typedef struct l2arc_dev_hdr_phys {
 	 * for initiating prefetch).
 	 */
 	l2arc_log_blkptr_t	dh_start_lbps[2];
-	const uint64_t		dh_pad[38];	/* pad to 512 bytes */
+	const uint64_t		dh_pad[36];	/* pad to 512 bytes */
 	zio_eck_t		dh_tail;
 } l2arc_dev_hdr_phys_t;
 CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
@@ -273,7 +277,7 @@ typedef struct l2arc_log_blk_phys {
 	/*
 	 * Pad header section to 128 bytes
 	 */
-	uint64_t		lb_pad[9];
+	uint64_t		lb_pad[8];
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;				/* 128K total */

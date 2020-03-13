@@ -3558,13 +3558,19 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		if (pread64(fd, &this_lb, psize,
 		    lbps[0].lbp_daddr) == psize) {
 
+			/* This is the same as in l2arc_log_blkptr_valid */
 			evicted = l2arc_range_check_overlap(l2ad_hand,
-			    l2ad_evict, lbps[0].lbp_daddr);
+			    l2ad_evict, lbps[0].lbp_daddr) ||
+			    l2arc_range_check_overlap(l2ad_hand, l2ad_evict,
+			    lbps[0].lbp_daddr - lbps[0].lbp_payload_asize) ||
+			    l2arc_range_check_overlap(l2ad_hand, l2ad_evict,
+			    lbps[0].lbp_daddr + psize - 1);
 
 			if ((evicted && !l2ad_first) || psize == 0 ||
 			    psize > sizeof (l2arc_log_blk_phys_t) ||
-			    lbps[0].lbp_daddr < l2ad_start ||
-			    (lbps[0].lbp_daddr + psize) > l2ad_end) {
+			    lbps[0].lbp_daddr - lbps[0].lbp_payload_asize <
+			    l2ad_start || (lbps[0].lbp_daddr + psize - 1) >
+			    l2ad_end) {
 				/* end of list */
 				break;
 			}
@@ -3606,6 +3612,8 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 				    (u_longlong_t)this_lb.lb_magic);
 				(void) printf("|\t\tdaddr: %llu\n",
 				    (u_longlong_t)lbps[0].lbp_daddr);
+				(void) printf("|\t\tpayload_asize: %llu\n",
+				    (u_longlong_t)lbps[0].lbp_payload_asize);
 				(void) printf("|\t\tlsize: %llu\n",
 				    (u_longlong_t)L2BLK_GET_LSIZE(
 				    (&lbps[0])->lbp_prop));

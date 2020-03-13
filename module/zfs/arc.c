@@ -8290,7 +8290,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	list_t			*buflist;
 	arc_buf_hdr_t		*hdr, *hdr_prev;
 	kmutex_t		*hash_lock;
-	uint64_t 		taddr, lb_ptr_daddr;
+	uint64_t 		taddr;
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf, *lb_ptr_buf_prev;
 
 	buflist = &dev->l2ad_buflist;
@@ -8338,10 +8338,8 @@ top:
 	    lb_ptr_buf = lb_ptr_buf_prev) {
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
-		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
 
-		if (!all && !l2arc_range_check_overlap(dev->l2ad_hand,
-		    dev->l2ad_evict, lb_ptr_daddr)) {
+		if (!all && !l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
 			break;
 		} else {
 			vdev_space_update(dev->l2ad_vdev,
@@ -9285,7 +9283,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 {
 	vdev_t			*vd = dev->l2ad_vdev;
 	spa_t			*spa = vd->vdev_spa;
-	int			err = 0;
+	int			i = 0, err = 0;
 	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
@@ -9310,11 +9308,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	 * Retrieve the persistent L2ARC device state.
 	 */
 	dev->l2ad_evict = MAX(l2dhdr->dh_evict, dev->l2ad_start);
-	dev->l2ad_hand = MAX(vdev_psize_to_asize(dev->l2ad_vdev,
-	    l2dhdr->dh_start_lbps[0].lbp_daddr + L2BLK_GET_PSIZE(
-	    (&l2dhdr->dh_start_lbps[0])->lbp_prop)), dev->l2ad_start);
-	dev->l2ad_first = !!(l2dhdr->dh_flags &
-	    L2ARC_DEV_HDR_EVICT_FIRST);
+	dev->l2ad_hand = MAX(l2dhdr->dh_start_lbps[0].lbp_daddr +
+	    L2BLK_GET_PSIZE((&l2dhdr->dh_start_lbps[0])->lbp_prop),
+	    dev->l2ad_start);
+	dev->l2ad_first = !!(l2dhdr->dh_flags & L2ARC_DEV_HDR_EVICT_FIRST);
 
 	/*
 	 * In case the zfs module parameter l2arc_rebuild_enabled is false
@@ -9327,7 +9324,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
 
 	/* Start the rebuild process */
-	for (;;) {
+	for (i = 0; ; i++) {
 		/* End of list detection */
 		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
 			break;
@@ -9430,10 +9427,10 @@ out:
 
 	if (!l2arc_rebuild_enabled) {
 		zfs_dbgmsg("L2ARC rebuild disabled");
-	} else if (err == 0) {
+	} else if (err == 0 && i > 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
 		zfs_dbgmsg("L2ARC successfully rebuilt");
-	} else {
+	} else if (err != 0) {
 		zfs_dbgmsg("L2ARC rebuild encountered errors");
 	}
 
@@ -9896,6 +9893,8 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	 */
 	l2dhdr->dh_start_lbps[1] = l2dhdr->dh_start_lbps[0];
 	l2dhdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
+	l2dhdr->dh_start_lbps[0].lbp_payload_asize =
+	    dev->l2ad_log_blk_payload_asize;
 	_NOTE(CONSTCOND)
 	L2BLK_SET_LSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, sizeof (*lb));
@@ -9959,26 +9958,41 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 
 /*
  * Validates an L2ARC log block address to make sure that it can be read
- * from the provided L2ARC device. Returns B_TRUE if the address is
- * within the device's bounds, or B_FALSE if not.
+ * from the provided L2ARC device.
  */
 static boolean_t
 l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
 	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
-	uint64_t end = lbp->lbp_daddr + psize;
+	uint64_t end = lbp->lbp_daddr + psize - 1;
+	uint64_t start = lbp->lbp_daddr - lbp->lbp_payload_asize;
 	boolean_t evicted = B_FALSE;
 
 	/*
 	 * A log block is valid if all of the following conditions are true:
-	 * - it fits entirely between l2ad_start and l2ad_end
+	 * - it fits entirely (including its payload) between l2ad_start and
+	 *   l2ad_end
 	 * - it has a valid size
-	 * - it was not evicted by l2arc_evict()
+	 * - neither the log block itself nor part of its payload was evicted
+	 *   by l2arc_evict():
+	 *
+	 *		l2ad_hand          l2ad_evict
+	 *		|			 |	lbp_daddr
+	 *		|     start		 |	|  end
+	 *		|     |			 |	|  |
+	 *		V     V		         V	V  V
+	 *   l2ad_start ============================================ l2ad_end
+	 *                    --------------------------||||
+	 *				^		 ^
+	 *				|		log block
+	 *				payload
 	 */
 	evicted = l2arc_range_check_overlap(dev->l2ad_hand,
-	    dev->l2ad_evict, lbp->lbp_daddr);
+	    dev->l2ad_evict, lbp->lbp_daddr) ||
+	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, end) ||
+	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, start);
 
-	return (lbp->lbp_daddr >= dev->l2ad_start && end <= dev->l2ad_end &&
+	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
 	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
 	    (!evicted || dev->l2ad_first));
 }
@@ -10016,7 +10030,8 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	L2BLK_SET_PROTECTED((le)->le_prop, !!(HDR_PROTECTED(hdr)));
 	L2BLK_SET_PREFETCH((le)->le_prop, !!(HDR_PREFETCH(hdr)));
 
-	dev->l2ad_log_blk_payload_asize += HDR_GET_PSIZE(hdr);
+	dev->l2ad_log_blk_payload_asize += vdev_psize_to_asize(dev->l2ad_vdev,
+	    HDR_GET_PSIZE(hdr));
 
 	return (dev->l2ad_log_ent_idx == l2dhdr->dh_log_blk_ent);
 }
