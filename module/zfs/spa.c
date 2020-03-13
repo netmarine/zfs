@@ -6512,7 +6512,6 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_event_notify(spa, NULL, NULL, ESC_ZFS_VDEV_ADD);
 	mutex_exit(&spa_namespace_lock);
 
-	spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 	return (0);
 }
 
