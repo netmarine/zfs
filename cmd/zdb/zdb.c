@@ -3691,7 +3691,7 @@ dump_l2arc_header(int fd)
 	}
 
 	if (error) {
-		(void) printf("invalid L2ARC device header\n");
+		(void) printf("no L2ARC device header found\n");
 		(void) printf("\n");
 		return (error);
 	}
@@ -3864,10 +3864,11 @@ dump_label(const char *dev)
 {
 	char path[MAXPATHLEN];
 	zdb_label_t labels[VDEV_LABELS];
-	uint64_t psize, ashift;
+	uint64_t psize, ashift, l2cache;
 	struct stat64 statbuf;
 	boolean_t config_found = B_FALSE;
 	boolean_t error = B_FALSE;
+	boolean_t read_l2arc_header = B_FALSE;
 	avl_tree_t config_tree;
 	avl_tree_t uberblock_tree;
 	void *node, *cookie;
@@ -3960,6 +3961,15 @@ dump_label(const char *dev)
 			if (nvlist_size(config, &size, NV_ENCODE_XDR) != 0)
 				size = buflen;
 
+			/* If the device is a cache device clear the header. */
+			if (!read_l2arc_header) {
+				if (nvlist_lookup_uint64(config,
+				    ZPOOL_CONFIG_POOL_STATE, &l2cache) == 0 &&
+				    l2cache == POOL_STATE_L2CACHE) {
+					read_l2arc_header = B_TRUE;
+				}
+			}
+
 			fletcher_4_native_varsize(buf, size, &cksum);
 			rec = cksum_record_insert(&config_tree, &cksum, l);
 
@@ -4013,7 +4023,8 @@ dump_label(const char *dev)
 	/*
 	 * Dump the L2ARC header, if existent.
 	 */
-	error |= dump_l2arc_header(fd);
+	if (read_l2arc_header)
+		dump_l2arc_header(fd);
 
 	cookie = NULL;
 	while ((node = avl_destroy_nodes(&config_tree, &cookie)) != NULL)
