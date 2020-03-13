@@ -157,8 +157,11 @@ zpool_clear_label(int fd)
 
 	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
 
-	if ((label = calloc(1, sizeof (vdev_label_t))) == NULL ||
-	    (l2dhdr = calloc(1, sizeof (l2arc_dev_hdr_phys_t))) == NULL) {
+	if ((label = calloc(1, sizeof (vdev_label_t))) == NULL)
+	       return (-1);
+
+	if ((l2dhdr = calloc(1, sizeof (l2arc_dev_hdr_phys_t))) == NULL) {
+		free(label);
 		return (-1);
 	}
 
