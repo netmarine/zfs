@@ -149,7 +149,7 @@ zpool_clear_label(int fd)
 	vdev_label_t *label;
 	l2arc_dev_hdr_phys_t *l2dhdr;
 	uint64_t size;
-	int labels_cleared = 0;
+	int labels_cleared = 0, header_cleared = 0;
 	boolean_t clear_l2arc_header = B_FALSE;
 
 	if (fstat64_blk(fd, &statbuf) == -1)
@@ -219,8 +219,10 @@ zpool_clear_label(int fd)
 	/* Clear the L2ARC header. */
 	if (clear_l2arc_header) {
 		memset(l2dhdr, 0, sizeof (l2arc_dev_hdr_phys_t));
-		(void) pwrite64(fd, l2dhdr, sizeof (l2arc_dev_hdr_phys_t),
-		    VDEV_LABEL_START_SIZE);
+		if (pwrite64(fd, l2dhdr, sizeof (l2arc_dev_hdr_phys_t),
+		    VDEV_LABEL_START_SIZE) == sizeof (l2arc_dev_hdr_phys_t)) {
+			header_cleared++;
+		}
 	}
 
 	free(label);
