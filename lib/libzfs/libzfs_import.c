@@ -158,7 +158,7 @@ zpool_clear_label(int fd)
 	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
 
 	if ((label = calloc(1, sizeof (vdev_label_t))) == NULL)
-	       return (-1);
+		return (-1);
 
 	if ((l2dhdr = calloc(1, sizeof (l2arc_dev_hdr_phys_t))) == NULL) {
 		free(label);
@@ -196,7 +196,7 @@ zpool_clear_label(int fd)
 		/* If the device is a cache device clear the header. */
 		if (!clear_l2arc_header) {
 			if (nvlist_lookup_uint64(config,
-			    ZPOOL_CONFIG_POOL_STATE, &l2cache) != 0 ||
+			    ZPOOL_CONFIG_POOL_STATE, &l2cache) == 0 &&
 			    l2cache == POOL_STATE_L2CACHE) {
 				clear_l2arc_header = B_TRUE;
 			}
