@@ -191,9 +191,12 @@ zpool_clear_label(int fd)
 		}
 
 		/* If the device is a cache device clear the header. */
-		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
-		    &l2cache) != 0 || l2cache == POOL_STATE_L2CACHE) {
-			clear_l2arc_header = B_TRUE;
+		if (!clear_l2arc_header) {
+			if (nvlist_lookup_uint64(config,
+			    ZPOOL_CONFIG_POOL_STATE, &l2cache) != 0 ||
+			    l2cache == POOL_STATE_L2CACHE) {
+				clear_l2arc_header = B_TRUE;
+			}
 		}
 
 		nvlist_free(config);
