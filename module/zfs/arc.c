@@ -8324,7 +8324,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
-	dev->l2ad_evict = MAX(dev->l2ad_dev_hdr->dh_evict, taddr);
+	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
 top:
 	mutex_enter(&dev->l2ad_mtx);
@@ -8383,7 +8383,7 @@ top:
 		ASSERT(!HDR_L2_WRITING(hdr));
 		ASSERT(!HDR_L2_WRITE_HEAD(hdr));
 
-		if (!all && (hdr->b_l2hdr.b_daddr >= taddr ||
+		if (!all && (hdr->b_l2hdr.b_daddr >= dev->l2ad_evict ||
 		    hdr->b_l2hdr.b_daddr < dev->l2ad_hand)) {
 			/*
 			 * We've evicted to the target address,
@@ -8579,7 +8579,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	arc_buf_hdr_t 		*hdr, *hdr_prev, *head;
 	uint64_t 		write_asize, write_psize, write_lsize, headroom;
 	boolean_t		full;
-	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_write_callback_t	*cb = NULL;
 	zio_t 			*pio, *wzio;
 	uint64_t 		guid = spa_load_guid(spa);
@@ -8819,7 +8818,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_evict = dev->l2ad_start;
-		l2dhdr->dh_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
@@ -9425,16 +9423,18 @@ out:
 	if ((dev->l2ad_hand + l2arc_write_size() +
 	    l2arc_log_blk_overhead(l2arc_write_size(), dev)) >=
 	    dev->l2ad_end) {
-		/*
-		 * If l2ad_evict was after l2ad_hand reset it too.
-		 */
-		l2arc_evict(dev, dev->l2ad_end, B_FALSE);
-		if (dev->l2ad_hand < dev->l2ad_evict) {
-			dev->l2ad_evict = dev->l2ad_start;
-			l2dhdr->dh_evict = dev->l2ad_start;
+		/* Hold the lock for updating the header */
+		if (!lock_held) {
+			spa_config_enter(spa, SCL_L2ARC, vd, RW_READER);
+			lock_held = B_TRUE;
 		}
 
+		/* Evict to l2ad_end and update the header */
+		l2arc_evict(dev, dev->l2ad_end, B_FALSE);
+		l2arc_dev_hdr_update(dev);
+
 		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 	}
 
