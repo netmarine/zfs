@@ -78,6 +78,8 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 
+sleep 2
+
 typeset log_blk_end=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
@@ -86,6 +88,8 @@ typeset log_blk_rebuild_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arc
 
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
+
+sleep 2
 
 typeset log_blk_rebuild_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
