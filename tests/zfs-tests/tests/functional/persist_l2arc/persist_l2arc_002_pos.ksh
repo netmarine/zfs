@@ -115,6 +115,7 @@ typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/ar
 	| awk '{print $3}')
 
 log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
+log_must test $l2_dh_log_blk -gt 0
 
 log_must test $l2_hits_end -gt $l2_hits_start
 
