@@ -9968,6 +9968,7 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	evicted =
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict,
 	    lbp->lbp_daddr) ||
+	    (start < dev->l2ad_hand && dev->l2ad_evict < lbp->lbp_daddr) ||
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, end) ||
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, start);
 

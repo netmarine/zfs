@@ -3565,6 +3565,12 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			}
 
 			fletcher_4_native_varsize(&this_lb, psize, &cksum);
+			if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
+				failed++;
+				inval_cksum = B_TRUE;
+			} else {
+				inval_cksum = B_FALSE;
+			}
 
 			switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
 			case ZIO_COMPRESS_OFF:
@@ -3587,13 +3593,6 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			if (this_lb.lb_magic != L2ARC_LOG_BLK_MAGIC) {
 				(void) printf("Invalid log block magic\n");
 				break;
-			}
-
-			if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
-				failed++;
-				inval_cksum = B_TRUE;
-			} else {
-				inval_cksum = B_FALSE;
 			}
 
 			if (dump_opt['l'] > 1) {
