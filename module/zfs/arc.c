@@ -9074,6 +9074,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 				/* start a new log block */
 				dev->l2ad_log_ent_idx = 0;
 				dev->l2ad_log_blk_payload_asize = 0;
+				dev->l2ad_log_blk_payload_start = 0;
 			}
 		}
 		/*
@@ -9879,6 +9880,8 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	l2dhdr->dh_start_lbps[0].lbp_daddr = dev->l2ad_hand;
 	l2dhdr->dh_start_lbps[0].lbp_payload_asize =
 	    dev->l2ad_log_blk_payload_asize;
+	l2dhdr->dh_start_lbps[0].lbp_payload_start =
+	    dev->l2ad_log_blk_payload_start;
 	_NOTE(CONSTCOND)
 	L2BLK_SET_LSIZE(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop, sizeof (*lb));
@@ -9938,6 +9941,7 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	/* start a new log block */
 	dev->l2ad_log_ent_idx = 0;
 	dev->l2ad_log_blk_payload_asize = 0;
+	dev->l2ad_log_blk_payload_start = 0;
 }
 
 /*
@@ -9949,7 +9953,7 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
 	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
 	uint64_t end = lbp->lbp_daddr + psize - 1;
-	uint64_t start = lbp->lbp_daddr - lbp->lbp_payload_asize;
+	uint64_t start = lbp->lbp_payload_start;
 	boolean_t evicted = B_FALSE;
 
 	/*
@@ -9972,19 +9976,19 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 *				payload
 	 */
 
-	if (start > end)
-		return (B_FALSE);
-
-	if (!dev->l2ad_first) {
-		ASSERT3U(dev->l2ad_hand, <=, dev->l2ad_evict);
-
+	if (dev->l2ad_hand < dev->l2ad_evict) {
 		evicted = dev->l2ad_hand <= end && start <= dev->l2ad_evict;
+	} else if (dev->l2ad_hand > dev->l2ad_evict) {
+		evicted = dev->l2ad_hand <= start || end <= dev->l2ad_evict ||
+		    dev->l2ad_hand <= end || start <= dev->l2ad_evict;
 	} else {
-		evicted = B_FALSE;
+		evicted =
+		    l2arc_range_check_overlap(start, end, dev->l2ad_hand);
 	}
 
 	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
-	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) && !evicted);
+	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
+	    (!evicted || dev->l2ad_first));
 }
 
 /*
@@ -10013,6 +10017,8 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	le->le_dva = hdr->b_dva;
 	le->le_birth = hdr->b_birth;
 	le->le_daddr = hdr->b_l2hdr.b_daddr;
+	if (index == 0)
+		dev->l2ad_log_blk_payload_start = le->le_daddr;
 	L2BLK_SET_LSIZE((le)->le_prop, HDR_GET_LSIZE(hdr));
 	L2BLK_SET_PSIZE((le)->le_prop, HDR_GET_PSIZE(hdr));
 	L2BLK_SET_COMPRESS((le)->le_prop, HDR_GET_COMPRESS(hdr));

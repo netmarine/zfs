@@ -3602,6 +3602,8 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 				    (u_longlong_t)lbps[0].lbp_daddr);
 				(void) printf("|\t\tpayload_asize: %llu\n",
 				    (u_longlong_t)lbps[0].lbp_payload_asize);
+				(void) printf("|\t\tpayload_start: %llu\n",
+				    (u_longlong_t)lbps[0].lbp_payload_start);
 				(void) printf("|\t\tlsize: %llu\n",
 				    (u_longlong_t)L2BLK_GET_LSIZE(
 				    (&lbps[0])->lbp_prop));
