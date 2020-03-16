@@ -9060,24 +9060,29 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 
 	if (rebuild && l2dhdr->dh_log_blk_ent > 0) {
 		/*
+		 * If we are onlining a cache device (vdev_reopen) that was
+		 * still present (l2arc_vdev_present()) and rebuild is enabled,
+		 * we should evict all ARC buffers and pointers to log blocks
+		 * and reclaim their space before restoring its contents to
+		 * L2ARC.
+		 */
+		if (reopen) {
+			if (!l2arc_rebuild_enabled) {
+				return;
+			} else {
+				l2arc_evict(dev, 0, B_TRUE);
+				/* start a new log block */
+				dev->l2ad_log_ent_idx = 0;
+				dev->l2ad_log_blk_payload_asize = 0;
+			}
+		}
+		/*
 		 * Just mark the device as pending for a rebuild. We won't
 		 * be starting a rebuild in line here as it would block pool
 		 * import. Instead spa_load_impl will hand that off to an
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
 		dev->l2ad_rebuild = B_TRUE;
-		/*
-		 * If we are onlining a cache device (vdev_reopen) that was
-		 * still present (l2arc_vdev_present()), we should evict all
-		 * ARC buffers and pointers to log blocks and reclaim their
-		 * space before restoring its contents to L2ARC.
-		 */
-		if (reopen) {
-			l2arc_evict(dev, 0, B_TRUE);
-			/* start a new log block */
-			dev->l2ad_log_ent_idx = 0;
-			dev->l2ad_log_blk_payload_asize = 0;
-		}
 	} else if (!rebuild && spa_writeable(spa)) {
 		/*
 		 * The boolean rebuild is false if reading the device header
