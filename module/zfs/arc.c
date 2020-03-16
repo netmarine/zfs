@@ -9975,16 +9975,9 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 *				|		log block
 	 *				payload
 	 */
-
-	if (dev->l2ad_hand < dev->l2ad_evict) {
-		evicted = dev->l2ad_hand <= end && start <= dev->l2ad_evict;
-	} else if (dev->l2ad_hand > dev->l2ad_evict) {
-		evicted = dev->l2ad_hand <= start || end <= dev->l2ad_evict ||
-		    dev->l2ad_hand <= end || start <= dev->l2ad_evict;
-	} else {
-		evicted =
-		    l2arc_range_check_overlap(start, end, dev->l2ad_hand);
-	}
+	evicted =
+	    l2arc_range_check_overlap(start, end, dev->l2ad_evict) ||
+	    l2arc_range_check_overlap(start, end, dev->l2ad_hand);
 
 	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
 	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
