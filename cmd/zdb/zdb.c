@@ -3556,13 +3556,12 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 
 	for (i = 0; ; i++) {
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
+
+		if (!l2arc_logblk_valid(&dev, lbps))
+			break;
+
 		if (pread64(fd, &this_lb, psize,
 		    lbps[0].lbp_daddr) == psize) {
-
-			if (!l2arc_log_blkptr_valid(&dev, &lbps[0])) {
-				/* end of list */
-				break;
-			}
 
 			fletcher_4_native_varsize(&this_lb, psize, &cksum);
 			if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
@@ -3579,8 +3578,8 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 				abd = abd_alloc_for_io(psize, B_TRUE);
 				abd_copy_from_buf_off(abd, &this_lb, 0, psize);
 				zio_decompress_data(L2BLK_GET_COMPRESS(
-				    (&lbps[0])->lbp_prop), abd, &this_lb, psize,
-				    sizeof (this_lb));
+				    (&lbps[0])->lbp_prop), abd, &this_lb,
+				    psize, sizeof (this_lb));
 				abd_free(abd);
 				break;
 			default:

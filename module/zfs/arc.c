@@ -907,6 +907,8 @@ static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 /* L2ARC persistence auxilliary routines. */
 boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *lbp);
+boolean_t l2arc_logblk_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lbps);
 static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
     const arc_buf_hdr_t *ab);
 boolean_t l2arc_range_check_overlap(uint64_t bottom,
@@ -8339,6 +8341,11 @@ top:
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
 
+		/*
+		 * We don't worry about log blocks left behind (ie
+		 * lbp_daddr + psize < l2ad_hand) because l2arc_write_buffers()
+		 * will never write more than l2arc_evict() evicts.
+		 */
 		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
 			break;
 		} else {
@@ -9280,7 +9287,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
 	l2arc_log_blk_phys_t	*this_lb, *next_lb;
 	zio_t			*this_io = NULL, *next_io = NULL;
-	l2arc_log_blkptr_t	lb_ptrs[2];
+	l2arc_log_blkptr_t	lbps[2];
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 	boolean_t		lock_held;
 
@@ -9314,15 +9321,15 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		goto out;
 
 	/* Prepare the rebuild process */
-	bcopy(l2dhdr->dh_start_lbps, lb_ptrs, sizeof (lb_ptrs));
+	bcopy(l2dhdr->dh_start_lbps, lbps, sizeof (lbps));
 
 	/* Start the rebuild process */
 	for (i = 0; ; i++) {
-		/* End of list detection */
-		if (!l2arc_log_blkptr_valid(dev, &lb_ptrs[0]))
+
+		if (!l2arc_logblk_valid(dev, lbps))
 			break;
 
-		if ((err = l2arc_log_blk_read(dev, &lb_ptrs[0], &lb_ptrs[1],
+		if ((err = l2arc_log_blk_read(dev, &lbps[0], &lbps[1],
 		    this_lb, next_lb, this_io, &next_io)) != 0)
 			goto out;
 
@@ -9351,8 +9358,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * can start reconstruction from this log block.
 		 */
 		l2arc_log_blk_restore(dev, this_lb,
-		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop),
-		    lb_ptrs[0].lbp_daddr);
+		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop),
+		    lbps[0].lbp_daddr);
 
 		/*
 		 * log block restored, include its pointer in the list of
@@ -9361,13 +9368,13 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		lb_ptr_buf = kmem_zalloc(sizeof (l2arc_lb_ptr_buf_t), KM_SLEEP);
 		lb_ptr_buf->lb_ptr = kmem_zalloc(sizeof (l2arc_log_blkptr_t),
 		    KM_SLEEP);
-		bcopy(&lb_ptrs[0], lb_ptr_buf->lb_ptr,
+		bcopy(&lbps[0], lb_ptr_buf->lb_ptr,
 		    sizeof (l2arc_log_blkptr_t));
 		mutex_enter(&dev->l2ad_mtx);
 		list_insert_tail(&dev->l2ad_lbptr_list, lb_ptr_buf);
 		mutex_exit(&dev->l2ad_mtx);
 		vdev_space_update(vd,
-		    L2BLK_GET_PSIZE((&lb_ptrs[0])->lbp_prop), 0, 0);
+		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop), 0, 0);
 
 		for (;;) {
 			mutex_enter(&l2arc_rebuild_thr_lock);
@@ -9397,8 +9404,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		/*
 		 * Continue with the next log block.
 		 */
-		lb_ptrs[0] = lb_ptrs[1];
-		lb_ptrs[1] = this_lb->lb_prev_lbp;
+		lbps[0] = lbps[1];
+		lbps[1] = this_lb->lb_prev_lbp;
 		PTR_SWAP(this_lb, next_lb);
 		this_io = next_io;
 		next_io = NULL;
@@ -9989,6 +9996,38 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
 	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
 	    (!evicted || dev->l2ad_first));
+}
+
+boolean_t l2arc_logblk_valid(l2arc_dev_t *dev,
+    const l2arc_log_blkptr_t *lbps)
+{
+	/* End of list detection */
+	if (!l2arc_log_blkptr_valid(dev, &lbps[0]))
+		return (B_FALSE);
+
+	/*
+	 * Protection against loops of log blocks:
+	 *
+	 *				      l2ad_hand   l2ad_evict
+	 *                                        V	      V
+	 * l2ad_start |=======================================| l2ad_end
+	 *             -----|||----|||---|||----|||
+	 *                  (3)    (2)   (1)    (0)
+	 *             ---|||---|||----|||---|||
+	 *		  (7)   (6)    (5)   (4)
+	 *
+	 * In this situation the pointer of log block (4) passes
+	 * l2arc_log_blkptr_valid() but should not be restored as it is
+	 * overwritten by the payload of log block (0). Only log
+	 * blocks (0)-(3) should be restored.
+	 */
+	if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
+	    lbps[0].lbp_daddr, dev->l2ad_evict) &&
+	    !dev->l2ad_first) {
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
 }
 
 /*
