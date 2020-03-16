@@ -93,6 +93,8 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 
+sleep 2
+
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
 
@@ -107,6 +109,8 @@ typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 
 export RUNTIME=10
 log_must fio $FIO_SCRIPTS/random_reads.fio
+
+sleep 2
 
 typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')

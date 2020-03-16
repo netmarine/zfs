@@ -75,6 +75,8 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 log_must zpool offline $TESTPOOL $VDEV_CACHE
 log_must zpool export $TESTPOOL
 
+sleep 2
+
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
 
