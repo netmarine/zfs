@@ -8339,7 +8339,7 @@ top:
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
 
-		if (!all && !l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
+		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
 			break;
 		} else {
 			vdev_space_update(dev->l2ad_vdev,
@@ -9486,6 +9486,7 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    l2dhdr->dh_vdev_guid != dev->l2ad_vdev->vdev_guid ||
 	    l2dhdr->dh_version != L2ARC_PERSISTENT_VERSION ||
 	    l2dhdr->dh_log_blk_ent != dev->l2ad_log_entries ||
+	    l2dhdr->dh_end != dev->l2ad_end ||
 	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
 	    l2dhdr->dh_evict)) {
 		/*
@@ -9965,16 +9966,20 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	 *				|		log block
 	 *				payload
 	 */
-	evicted =
-	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict,
-	    lbp->lbp_daddr) ||
-	    (start < dev->l2ad_hand && dev->l2ad_evict < lbp->lbp_daddr) ||
-	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, end) ||
-	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, start);
+
+	if (start > end)
+		return (B_FALSE);
+
+	if (!dev->l2ad_first) {
+		ASSERT3U(dev->l2ad_hand, <=, dev->l2ad_evict);
+
+		evicted = dev->l2ad_hand <= end && start <= dev->l2ad_evict;
+	} else {
+		evicted = B_FALSE;
+	}
 
 	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
-	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
-	    (!evicted || dev->l2ad_first));
+	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) && !evicted);
 }
 
 /*
