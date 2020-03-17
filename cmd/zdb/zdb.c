@@ -3557,7 +3557,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	for (i = 0; ; i++) {
 		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 
-		if (!l2arc_logblk_valid(&dev, lbps))
+		if (!l2arc_log_blkptr_valid(&dev, &lbps[0]))
 			break;
 
 		if (pread64(fd, &this_lb, psize,
@@ -3627,6 +3627,17 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			if (dump_opt['l'] > 2)
 				dump_l2arc_log_entries(l2dhdr.dh_log_blk_ent,
 				    this_lb.lb_entries, i);
+
+			if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
+			    lbps[0].lbp_daddr, dev.l2ad_evict) &&
+			    !dev.l2ad_first) {
+				/*
+				 * If we break here, we need to count the
+				 * currently restored block.
+				 */
+				i++;
+				break;
+			}
 
 			lbps[0] = lbps[1];
 			lbps[1] = this_lb.lb_prev_lbp;

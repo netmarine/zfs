@@ -871,8 +871,6 @@ extern int param_set_arc_int(const char *buf, zfs_kernel_param_t *kp);
 /* used in zdb.c */
 boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
     const l2arc_log_blkptr_t *lbp);
-boolean_t l2arc_logblk_valid(l2arc_dev_t *dev,
-    const l2arc_log_blkptr_t *lb_ptrs);
 
 #ifdef __cplusplus
 }
