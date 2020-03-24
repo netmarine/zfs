@@ -912,6 +912,8 @@ static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
 boolean_t l2arc_range_check_overlap(uint64_t bottom,
     uint64_t top, uint64_t check);
 static void l2arc_blk_fetch_done(zio_t *zio);
+static inline uint64_t
+    l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev);
 
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
@@ -7712,10 +7714,12 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 * iteration can occur.
 	 */
 	dev_size = dev->l2ad_end - dev->l2ad_start;
-	if (size >= dev_size) {
+	if ((size + l2arc_log_blk_overhead(size, dev)) >= dev_size) {
 		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
-		    "exceeds the size of the cache device (guid %llu), "
-		    "resetting them to the default (%d)",
+		    "plus the overhead of log blocks (persistent L2ARC, "
+		    "%llu bytes) exceeds the size of the cache device "
+		    "(guid %llu), resetting them to the default (%d)",
+		    l2arc_log_blk_overhead(size, dev),
 		    dev->l2ad_vdev->vdev_guid, L2ARC_WRITE_SIZE);
 		size = l2arc_write_max = l2arc_write_boost = L2ARC_WRITE_SIZE;
 
@@ -8287,27 +8291,23 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
 static void
 l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 {
-	list_t			*buflist;
-	arc_buf_hdr_t		*hdr, *hdr_prev;
-	kmutex_t		*hash_lock;
-	uint64_t 		taddr;
-	l2arc_lb_ptr_buf_t	*lb_ptr_buf, *lb_ptr_buf_prev;
+	list_t *buflist;
+	arc_buf_hdr_t *hdr, *hdr_prev;
+	kmutex_t *hash_lock;
+	uint64_t taddr;
+	boolean_t rerun;
+	l2arc_lb_ptr_buf_t *lb_ptr_buf, *lb_ptr_buf_prev;
 
 	buflist = &dev->l2ad_buflist;
-
-	if (!all && dev->l2ad_first) {
-		/*
-		 * This is the first sweep through the device.  There is
-		 * nothing to evict.
-		 */
-		return;
-	}
 
 	/*
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
 	distance += l2arc_log_blk_overhead(distance, dev);
-	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * distance))) {
+
+top:
+	rerun = B_FALSE;
+	if (dev->l2ad_hand >= (dev->l2ad_end - distance)) {
 		/*
 		 * When there is no space to accomodate upcoming writes,
 		 * evict to the end. Then bump the write hand to the start
@@ -8324,9 +8324,17 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
+	if (!all && dev->l2ad_first) {
+		/*
+		 * This is the first sweep through the device.  There is
+		 * nothing to evict.
+		 */
+		goto out;
+	}
+
 	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
-top:
+retry:
 	mutex_enter(&dev->l2ad_mtx);
 	/*
 	 * We have to account for evicted log blocks. Run vdev_space_update()
@@ -8433,6 +8441,7 @@ out:
 		 * end. l2arc_evict() has already evicted ahead for this case.
 		 */
 		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;
 		goto top;
 	}
@@ -8814,17 +8823,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
 
 	l2arc_dev_hdr_update(dev);
-
-	/*
-	 * Bump device hand to the device start if it is approaching the end.
-	 * l2arc_evict() will already have evicted ahead for this case.
-	 */
-	if (dev->l2ad_hand + target_sz +
-	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
-		dev->l2ad_hand = dev->l2ad_start;
-		dev->l2ad_evict = dev->l2ad_start;
-		dev->l2ad_first = B_FALSE;
-	}
 
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
@@ -9454,29 +9452,6 @@ out:
 		zfs_dbgmsg("L2ARC successfully rebuilt");
 	} else if (err != 0) {
 		zfs_dbgmsg("L2ARC rebuild aborted");
-	}
-
-	/*
-	 * If l2ad_hand is at the end of the device with no space
-	 * left to accommodate upcoming writes, we reset it to l2ad_start,
-	 * like l2arc_write_buffers() does.
-	 */
-	if ((dev->l2ad_hand + l2arc_write_size() +
-	    l2arc_log_blk_overhead(l2arc_write_size(), dev)) >=
-	    dev->l2ad_end) {
-		/* Hold the lock for updating the header */
-		if (!lock_held) {
-			spa_config_enter(spa, SCL_L2ARC, vd, RW_READER);
-			lock_held = B_TRUE;
-		}
-
-		/* Evict to l2ad_end and update the header */
-		l2arc_evict(dev, dev->l2ad_end, B_FALSE);
-		l2arc_dev_hdr_update(dev);
-
-		dev->l2ad_hand = dev->l2ad_start;
-		dev->l2ad_evict = dev->l2ad_start;
-		dev->l2ad_first = B_FALSE;
 	}
 
 	if (lock_held)
