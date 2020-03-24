@@ -935,6 +935,8 @@ static boolean_t l2arc_log_blk_insert(l2arc_dev_t *dev,
 boolean_t l2arc_range_check_overlap(uint64_t bottom,
     uint64_t top, uint64_t check);
 static void l2arc_blk_fetch_done(zio_t *zio);
+static inline uint64_t
+    l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev);
 
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
@@ -8103,9 +8105,9 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 }
 
 static uint64_t
-l2arc_write_size(void)
+l2arc_write_size(l2arc_dev_t *dev)
 {
-	uint64_t size;
+	uint64_t size, dev_size;
 
 	/*
 	 * Make sure our globals have meaningful values in case the user
@@ -8121,6 +8123,25 @@ l2arc_write_size(void)
 
 	if (arc_warm == B_FALSE)
 		size += l2arc_write_boost;
+
+	/*
+	 * Make sure the write size does not exceed the size of the cache
+	 * device. This is important in l2arc_evict(), otherwise infinite
+	 * iteration can occur.
+	 */
+	dev_size = dev->l2ad_end - dev->l2ad_start;
+	if ((size + l2arc_log_blk_overhead(size, dev)) >= dev_size) {
+		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
+		    "plus the overhead of log blocks (persistent L2ARC, "
+		    "%llu bytes) exceeds the size of the cache device "
+		    "(guid %llu), resetting them to the default (%d)",
+		    l2arc_log_blk_overhead(size, dev),
+		    dev->l2ad_vdev->vdev_guid, L2ARC_WRITE_SIZE);
+		size = l2arc_write_max = l2arc_write_boost = L2ARC_WRITE_SIZE;
+
+		if (arc_warm == B_FALSE)
+			size += l2arc_write_boost;
+	}
 
 	return (size);
 
@@ -8689,10 +8710,11 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	list_t			*buflist;
 	arc_buf_hdr_t		*hdr, *hdr_prev;
 	kmutex_t		*hash_lock;
-	uint64_t 		taddr, trim_ahead, lb_ptr_daddr, psize;
+	uint64_t 		taddr, lb_ptr_daddr, psize;
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf, *lb_ptr_buf_prev;
 	vdev_t			*vd = dev->l2ad_vdev;
 	trim_args_t		*ta = dev->l2ad_ta;
+	boolean_t 		rerun;
 
 	buflist = &dev->l2ad_buflist;
 
@@ -8700,11 +8722,25 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
 	distance += l2arc_log_blk_overhead(distance, dev);
-	if (dev->l2ad_hand >= (dev->l2ad_end - (2 * distance))) {
+	if (vd->vdev_has_trim) {
+		/*
+		 * Trim ahead 64MB or the write size, whichever is larger.
+		 */
+		distance = MAX(64 * 1024 * 1024, distance);
+	}
+
+top:
+	rerun = B_FALSE;
+	if (dev->l2ad_hand >= (dev->l2ad_end - distance)) {
 		/*
 		 * When nearing the end of the device, evict to the end
-		 * before the device write hand jumps to the start.
+		 * before the device write hand jumps to the start. Then
+		 * bump the write hand to the start and iterate. This
+		 * iteration does not happen indefinitely as we make sure
+		 * in l2arc_write_size() that when l2ad_hand is reset, the
+		 * write size does not exceed the end of the device.
 		 */
+		rerun = B_TRUE;
 		taddr = dev->l2ad_end;
 	} else {
 		taddr = dev->l2ad_hand + distance;
@@ -8712,134 +8748,127 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
 	    uint64_t, taddr, boolean_t, all);
 
-	if (!all && vd->vdev_has_trim) {
+	if (!all && dev->l2ad_first) {
 		/*
-		 * Trim ahead 64MB or 2 times the write size, with a minimum
-		 * of 8MB.
+		 * This is the first sweep through the device. There is
+		 * nothing to evict.
 		 */
-		trim_ahead = MAX(MAX((64 * 1024 * 1024), (2 * distance)),
-		    8 * 1024 * 1024);
-
-		if (dev->l2ad_hand >= dev->l2ad_end - trim_ahead) {
-			taddr = dev->l2ad_end;
-		} else {
-			taddr = dev->l2ad_hand + trim_ahead;
-		}
+		goto out;
 	}
 
 	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
-	if (all || !dev->l2ad_first) {
-top:
-		mutex_enter(&dev->l2ad_mtx);
-		/*
-		 * We have to account for evicted log blocks. Run
-		 * vdev_space_update() on log blocks whose offset (in bytes)
-		 * is before the evicted offset (in bytes) by searching in the
-		 * list of pointers to log blocks present in the L2ARC device.
-		 */
-		for (lb_ptr_buf = list_tail(&dev->l2ad_lbptr_list); lb_ptr_buf;
-		    lb_ptr_buf = lb_ptr_buf_prev) {
+retry:
+	mutex_enter(&dev->l2ad_mtx);
+	/*
+	 * We have to account for evicted log blocks. Run
+	 * vdev_space_update() on log blocks whose offset (in bytes)
+	 * is before the evicted offset (in bytes) by searching in the
+	 * list of pointers to log blocks present in the L2ARC device.
+	 */
+	for (lb_ptr_buf = list_tail(&dev->l2ad_lbptr_list); lb_ptr_buf;
+	    lb_ptr_buf = lb_ptr_buf_prev) {
 
-			lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list,
-			    lb_ptr_buf);
-			lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
-			psize = L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
+		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list,
+		    lb_ptr_buf);
+		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
+		psize = L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 
-			if (!all && l2arc_log_blkptr_valid(dev,
-			    lb_ptr_buf->lb_ptr)) {
-				break;
-			} else {
-				vdev_space_update(vd, -psize, 0, 0);
-				if (!all && vd->vdev_has_trim) {
-					range_tree_add(ta->trim_tree,
-					    lb_ptr_daddr -
-					    VDEV_LABEL_START_SIZE, psize);
-				}
-				list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
-				kmem_free(lb_ptr_buf->lb_ptr,
-				    sizeof (l2arc_log_blkptr_t));
-				kmem_free(lb_ptr_buf,
-				    sizeof (l2arc_lb_ptr_buf_t));
-			}
-		}
-
-		for (hdr = list_tail(buflist); hdr; hdr = hdr_prev) {
-			hdr_prev = list_prev(buflist, hdr);
-
-			ASSERT(!HDR_EMPTY(hdr));
-			hash_lock = HDR_LOCK(hdr);
-
-			/*
-			 * We cannot use mutex_enter or else we can deadlock
-			 * with l2arc_write_buffers (due to swapping the order
-			 * the hash lock and l2ad_mtx are taken).
-			 */
-			if (!mutex_tryenter(hash_lock)) {
-				ARCSTAT_BUMP(arcstat_l2_evict_lock_retry);
-				mutex_exit(&dev->l2ad_mtx);
-				mutex_enter(hash_lock);
-				mutex_exit(hash_lock);
-				goto top;
-			}
-
-			/*
-			 * A header can't be on this list if it doesn't have
-			 * L2 header.
-			 */
-			ASSERT(HDR_HAS_L2HDR(hdr));
-
-			/* Ensure this header has finished being written. */
-			ASSERT(!HDR_L2_WRITING(hdr));
-			ASSERT(!HDR_L2_WRITE_HEAD(hdr));
-
-			if (!all && (hdr->b_l2hdr.b_daddr >= dev->l2ad_evict ||
-			    hdr->b_l2hdr.b_daddr < dev->l2ad_hand)) {
-				/*
-				 * We've evicted to the target address,
-				 * or the end of the device.
-				 */
-				mutex_exit(hash_lock);
-				break;
-			}
-
+		if (!all && l2arc_log_blkptr_valid(dev,
+		    lb_ptr_buf->lb_ptr)) {
+			break;
+		} else {
+			vdev_space_update(vd, -psize, 0, 0);
 			if (!all && vd->vdev_has_trim) {
 				range_tree_add(ta->trim_tree,
-				    hdr->b_l2hdr.b_daddr -
-				    VDEV_LABEL_START_SIZE,
-				    vdev_psize_to_asize(vd,
-				    HDR_GET_PSIZE(hdr)));
+				    lb_ptr_daddr -
+				    VDEV_LABEL_START_SIZE, psize);
 			}
-
-			if (!HDR_HAS_L1HDR(hdr)) {
-				ASSERT(!HDR_L2_READING(hdr));
-				/*
-				 * This doesn't exist in the ARC.  Destroy.
-				 * arc_hdr_destroy() will call list_remove()
-				 * and decrement arcstat_l2_lsize.
-				 */
-				arc_change_state(arc_anon, hdr, hash_lock);
-				arc_hdr_destroy(hdr);
-			} else {
-				ASSERT(hdr->b_l1hdr.b_state != arc_l2c_only);
-				ARCSTAT_BUMP(arcstat_l2_evict_l1cached);
-				/*
-				 * Invalidate issued or about to be issued
-				 * reads, since we may be about to write
-				 * over this location.
-				 */
-				if (HDR_L2_READING(hdr)) {
-					ARCSTAT_BUMP(arcstat_l2_evict_reading);
-					arc_hdr_set_flags(hdr,
-					    ARC_FLAG_L2_EVICTED);
-				}
-
-				arc_hdr_l2hdr_destroy(hdr);
-			}
-			mutex_exit(hash_lock);
+			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
+			kmem_free(lb_ptr_buf->lb_ptr,
+			    sizeof (l2arc_log_blkptr_t));
+			kmem_free(lb_ptr_buf,
+			    sizeof (l2arc_lb_ptr_buf_t));
 		}
-		mutex_exit(&dev->l2ad_mtx);
 	}
+
+	for (hdr = list_tail(buflist); hdr; hdr = hdr_prev) {
+		hdr_prev = list_prev(buflist, hdr);
+
+		ASSERT(!HDR_EMPTY(hdr));
+		hash_lock = HDR_LOCK(hdr);
+
+		/*
+		 * We cannot use mutex_enter or else we can deadlock
+		 * with l2arc_write_buffers (due to swapping the order
+		 * the hash lock and l2ad_mtx are taken).
+		 */
+		if (!mutex_tryenter(hash_lock)) {
+			ARCSTAT_BUMP(arcstat_l2_evict_lock_retry);
+			mutex_exit(&dev->l2ad_mtx);
+			mutex_enter(hash_lock);
+			mutex_exit(hash_lock);
+			goto retry;
+		}
+
+		/*
+		 * A header can't be on this list if it doesn't have
+		 * L2 header.
+		 */
+		ASSERT(HDR_HAS_L2HDR(hdr));
+
+		/* Ensure this header has finished being written. */
+		ASSERT(!HDR_L2_WRITING(hdr));
+		ASSERT(!HDR_L2_WRITE_HEAD(hdr));
+
+		if (!all && (hdr->b_l2hdr.b_daddr >= dev->l2ad_evict ||
+		    hdr->b_l2hdr.b_daddr < dev->l2ad_hand)) {
+			/*
+			 * We've evicted to the target address,
+			 * or the end of the device.
+			 */
+			mutex_exit(hash_lock);
+			break;
+		}
+
+		if (!all && vd->vdev_has_trim) {
+			range_tree_add(ta->trim_tree,
+			    hdr->b_l2hdr.b_daddr -
+			    VDEV_LABEL_START_SIZE,
+			    vdev_psize_to_asize(vd,
+			    HDR_GET_PSIZE(hdr)));
+		}
+
+		if (!HDR_HAS_L1HDR(hdr)) {
+			ASSERT(!HDR_L2_READING(hdr));
+			/*
+			 * This doesn't exist in the ARC.  Destroy.
+			 * arc_hdr_destroy() will call list_remove()
+			 * and decrement arcstat_l2_lsize.
+			 */
+			arc_change_state(arc_anon, hdr, hash_lock);
+			arc_hdr_destroy(hdr);
+		} else {
+			ASSERT(hdr->b_l1hdr.b_state != arc_l2c_only);
+			ARCSTAT_BUMP(arcstat_l2_evict_l1cached);
+			/*
+			 * Invalidate issued or about to be issued
+			 * reads, since we may be about to write
+			 * over this location.
+			 */
+			if (HDR_L2_READING(hdr)) {
+				ARCSTAT_BUMP(arcstat_l2_evict_reading);
+				arc_hdr_set_flags(hdr,
+				    ARC_FLAG_L2_EVICTED);
+			}
+
+			arc_hdr_l2hdr_destroy(hdr);
+		}
+		mutex_exit(hash_lock);
+	}
+	mutex_exit(&dev->l2ad_mtx);
+
+out:
 	/*
 	 * Trim the evicted space if the device supports it
 	 */
@@ -8855,6 +8884,17 @@ top:
 			mutex_exit(&vd->vdev_trim_io_lock);
 		}
 		range_tree_vacate(ta->trim_tree, NULL, NULL);
+	}
+
+	if (rerun) {
+		/*
+		 * Bump device hand to the device start if it is approaching the
+		 * end. l2arc_evict() has already evicted ahead for this case.
+		 */
+		dev->l2ad_hand = dev->l2ad_start;
+		dev->l2ad_evict = dev->l2ad_start;
+		dev->l2ad_first = B_FALSE;
+		goto top;
 	}
 }
 
@@ -9235,17 +9275,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 	l2arc_dev_hdr_update(dev);
 
-	/*
-	 * Bump device hand to the device start if it is approaching the end.
-	 * l2arc_evict() will already have evicted ahead for this case.
-	 */
-	if (dev->l2ad_hand + target_sz +
-	    l2arc_log_blk_overhead(target_sz, dev) >= dev->l2ad_end) {
-		dev->l2ad_hand = dev->l2ad_start;
-		dev->l2ad_evict = dev->l2ad_start;
-		dev->l2ad_first = B_FALSE;
-	}
-
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
 	dev->l2ad_writing = B_FALSE;
@@ -9328,7 +9357,7 @@ l2arc_feed_thread(void *unused)
 
 		ARCSTAT_BUMP(arcstat_l2_feeds);
 
-		size = l2arc_write_size();
+		size = l2arc_write_size(dev);
 
 		/*
 		 * Evict L2ARC buffers that will be overwritten.
@@ -9889,29 +9918,6 @@ out:
 		zfs_dbgmsg("L2ARC successfully rebuilt");
 	} else if (err != 0) {
 		zfs_dbgmsg("L2ARC rebuild aborted");
-	}
-
-	/*
-	 * If l2ad_hand is at the end of the device with no space
-	 * left to accommodate upcoming writes, we reset it to l2ad_start,
-	 * like l2arc_write_buffers() does.
-	 */
-	if ((dev->l2ad_hand + l2arc_write_size() +
-	    l2arc_log_blk_overhead(l2arc_write_size(), dev)) >=
-	    dev->l2ad_end) {
-		/* Hold the lock for updating the header */
-		if (!lock_held) {
-			spa_config_enter(spa, SCL_L2ARC, vd, RW_READER);
-			lock_held = B_TRUE;
-		}
-
-		/* Evict to l2ad_end and update the header */
-		l2arc_evict(dev, dev->l2ad_end, B_FALSE);
-		l2arc_dev_hdr_update(dev);
-
-		dev->l2ad_hand = dev->l2ad_start;
-		dev->l2ad_evict = dev->l2ad_start;
-		dev->l2ad_first = B_FALSE;
 	}
 
 	if (lock_held)

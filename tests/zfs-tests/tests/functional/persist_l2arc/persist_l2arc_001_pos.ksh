@@ -46,9 +46,7 @@
 #	wr_sz: l2arc_write_max + l2arc_write_boost (worst case)
 #	blk_overhead: wr_sz / SPA_MINBLOCKSIZE / (l2 / SPA_MAXBLOCKSIZE) *
 #		sizeof (l2arc_log_blk_phys_t)
-#	min restored size: l2 - 2 * (wr_sz + blk_overhead)
-#				^
-#				when l2ad_hand approaches l2ad_end
+#	min restored size: l2 - (wr_sz + blk_overhead)
 #
 
 verify_runnable "global"
