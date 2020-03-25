@@ -37,7 +37,9 @@
 #	7. Mount the encypted ZFS file system.
 #	8. Read amount of log blocks built.
 #	9. Compare the two amounts
-#	10. Check if the labels of the L2ARC device are intact.
+#	10. Read the file written in (3) and check if l2_hits in
+#		/proc/spl/kstat/zfs/arcstats increased.
+#	11. Check if the labels of the L2ARC device are intact.
 #
 
 verify_runnable "global"
@@ -89,13 +91,22 @@ typeset log_blk_rebuild_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arc
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 
-sleep 2
+typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
+
+export RUNTIME=10
+log_must fio $FIO_SCRIPTS/random_reads.fio
+
+typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
+	awk '{print $3}')
 
 typeset log_blk_rebuild_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats | \
 	awk '{print $3}')
 
 log_must test $(( $log_blk_rebuild_end - $log_blk_rebuild_start )) -eq \
 	$(( $log_blk_end - $log_blk_start ))
+
+log_must test $l2_hits_end -gt $l2_hits_start
 
 log_must zdb -lq $VDEV_CACHE
 

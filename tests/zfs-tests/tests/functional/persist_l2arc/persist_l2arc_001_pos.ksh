@@ -35,9 +35,7 @@
 #	6. Import pool.
 #	7. Read the amount of log blocks rebuilt in arcstats and compare to
 #		(4).
-#	8. Read the file written in (2) and check if l2_hits in
-#		/proc/spl/kstat/zfs/arcstats increased.
-#	9. Check if the labels of the L2ARC device are intact.
+#	8. Check if the labels of the L2ARC device are intact.
 #
 #	* We can predict the minimum bytes of L2ARC restored if we subtract
 #	from the effective size of the cache device the bytes l2arc_evict()
@@ -98,22 +96,13 @@ typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/
 
 log_must zpool import -d $VDIR $TESTPOOL
 
-typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
-
-export RUNTIME=10
-log_must fio $FIO_SCRIPTS/random_reads.fio
-
-typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+sleep 2
 
 typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
 	| awk '{print $3}')
 
 log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
 log_must test $l2_dh_log_blk -gt 0
-
-log_must test $l2_hits_end -gt $l2_hits_start
 
 log_must zdb -lq $VDEV_CACHE
 
