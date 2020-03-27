@@ -9470,9 +9470,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	 * The L2ARC has to hold at least the payload of one log block for
 	 * them to be restored (persistent L2ARC). The payload of a log block
 	 * depends on the amount of its log entries. We always write log blocks
-	 * with 1023 entries. How many of them are committed or restored depends
+	 * with 1022 entries. How many of them are committed or restored depends
 	 * on the size of the L2ARC device. Thus the maximum payload of
-	 * one log block is 1023 * SPA_MAXBLOCKSIZE = 16GB. If the L2ARC device
+	 * one log block is 1022 * SPA_MAXBLOCKSIZE = 16GB. If the L2ARC device
 	 * is less than that, we reduce the amount of committed and restored
 	 * log entries per block so as to enable persistence.
 	 */
