@@ -258,6 +258,11 @@ typedef struct l2arc_log_ent_phys {
 	 */
 	uint64_t		le_prop;
 	uint64_t		le_daddr;	/* buf location on l2dev */
+	/*
+	 * We pad the size of each entry to a power of 2 so that the size of
+	 * l2arc_log_blk_phys_t is power-of-2 aligned with SPA_MINBLOCKSHIFT,
+	 * because of the L2ARC_SET_*SIZE macros.
+	 */
 	const uint64_t		le_pad[11];	/* pad to 128 bytes	 */
 } l2arc_log_ent_phys_t;
 
@@ -285,6 +290,13 @@ typedef struct l2arc_log_blk_phys {
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
 } l2arc_log_blk_phys_t;				/* 128K total */
+
+/*
+ * The size of l2arc_log_blk_phys_t has to be power-of-2 aligned with
+ * SPA_MINBLOCKSHIFT because of L2BLK_SET_*SIZE macros.
+ */
+CTASSERT_GLOBAL(IS_P2ALIGNED(sizeof (l2arc_log_blk_phys_t),
+    1ULL << SPA_MINBLOCKSHIFT));
 CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) >= SPA_MINBLOCKSIZE);
 CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) <= SPA_MAXBLOCKSIZE);
 
