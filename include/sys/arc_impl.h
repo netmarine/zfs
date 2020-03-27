@@ -263,13 +263,13 @@ typedef struct l2arc_log_ent_phys {
 	 * l2arc_log_blk_phys_t is power-of-2 aligned with SPA_MINBLOCKSHIFT,
 	 * because of the L2ARC_SET_*SIZE macros.
 	 */
-	const uint64_t		le_pad[11];	/* pad to 128 bytes	 */
+	const uint64_t		le_pad[3];	/* pad to 64 bytes	 */
 } l2arc_log_ent_phys_t;
 
-#define	L2ARC_LOG_BLK_MAX_ENTRIES	(1023)
+#define	L2ARC_LOG_BLK_MAX_ENTRIES	(1022)
 
 /*
- * A log block of up to 1023 ARC buffer log entries, chained into the
+ * A log block of up to 1022 ARC buffer log entries, chained into the
  * persistent L2ARC metadata linked list. Byte order of magic determines
  * whether 64-bit bswap of fields is necessary.
  */
@@ -289,7 +289,7 @@ typedef struct l2arc_log_blk_phys {
 	uint64_t		lb_pad[7];
 	/* Payload */
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_MAX_ENTRIES];
-} l2arc_log_blk_phys_t;				/* 128K total */
+} l2arc_log_blk_phys_t;				/* 64K total */
 
 /*
  * The size of l2arc_log_blk_phys_t has to be power-of-2 aligned with
