@@ -89,15 +89,13 @@ log_must zpool export $TESTPOOL
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
 
-typeset l2_rebuild_log_blk_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
-	| awk '{print $3}')
+typeset l2_rebuild_log_blk_start=$(get_arcstat l2_rebuild_log_blks)
 
 log_must zpool import -d $VDIR $TESTPOOL
 
 sleep 2
 
-typeset l2_rebuild_log_blk_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats \
-	| awk '{print $3}')
+typeset l2_rebuild_log_blk_end=$(get_arcstat l2_rebuild_log_blks)
 
 log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end - $l2_rebuild_log_blk_start ))
 log_must test $l2_dh_log_blk -gt 0

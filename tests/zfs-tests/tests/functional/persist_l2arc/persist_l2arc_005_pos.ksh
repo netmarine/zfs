@@ -66,8 +66,7 @@ export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
-typeset log_blk_start=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset log_blk_start=$(get_arcstat l2_log_blk_writes)
 
 log_must zpool create -f $TESTPOOL $VDEV \
 	cache $VDEV_CACHE
@@ -82,26 +81,21 @@ log_must zpool export $TESTPOOL
 
 sleep 2
 
-typeset log_blk_end=$(grep l2_log_blk_writes /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset log_blk_end=$(get_arcstat l2_log_blk_writes)
 
-typeset log_blk_rebuild_start=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset log_blk_rebuild_start=$(get_arcstat l2_rebuild_log_blks)
 
 log_must zpool import -d $VDIR $TESTPOOL
 log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 
-typeset l2_hits_start=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset l2_hits_start=$(get_arcstat l2_hits)
 
 export RUNTIME=10
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
-typeset l2_hits_end=$(grep l2_hits /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset l2_hits_end=$(get_arcstat l2_hits)
 
-typeset log_blk_rebuild_end=$(grep l2_rebuild_log_blks /proc/spl/kstat/zfs/arcstats | \
-	awk '{print $3}')
+typeset log_blk_rebuild_end=$(get_arcstat l2_rebuild_log_blks)
 
 log_must test $(( $log_blk_rebuild_end - $log_blk_rebuild_start )) -eq \
 	$(( $log_blk_end - $log_blk_start ))
