@@ -3056,8 +3056,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			    this_lb.lb_entries, i);
 
 		if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
-		    lbps[0].lbp_daddr, dev.l2ad_evict) &&
-		    !dev.l2ad_first) {
+		    lbps[0].lbp_daddr, dev.l2ad_evict) && !dev.l2ad_first) {
 			/*
 			 * If we break here, we need to count the
 			 * currently restored block.
