@@ -68,8 +68,7 @@ log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 typeset log_blk_start=$(get_arcstat l2_log_blk_writes)
 
-log_must zpool create -f $TESTPOOL $VDEV \
-	cache $VDEV_CACHE
+log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
 
 log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 	"-o keyformat=passphrase $TESTPOOL/$TESTFS1"
