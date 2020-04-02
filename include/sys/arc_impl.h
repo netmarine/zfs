@@ -326,16 +326,18 @@ typedef struct l2arc_lb_ptr_buf {
 	BF64_GET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1)
 #define	L2BLK_SET_PSIZE(field, x)	\
 	BF64_SET_SB((field), 16, SPA_PSIZEBITS, SPA_MINBLOCKSHIFT, 1, x)
-#define	L2BLK_GET_COMPRESS(field)	BF64_GET((field), 32, 7)
-#define	L2BLK_SET_COMPRESS(field, x)	BF64_SET((field), 32, 7, x)
+#define	L2BLK_GET_COMPRESS(field)	\
+	BF64_GET((field), 32, SPA_COMPRESSBITS)
+#define	L2BLK_SET_COMPRESS(field, x)	\
+	BF64_SET((field), 32, SPA_COMPRESSBITS, x)
+#define	L2BLK_GET_PREFETCH(field)	BF64_GET((field), 39, 1)
+#define	L2BLK_SET_PREFETCH(field, x)	BF64_SET((field), 39, 1, x)
 #define	L2BLK_GET_CHECKSUM(field)	BF64_GET((field), 40, 8)
 #define	L2BLK_SET_CHECKSUM(field, x)	BF64_SET((field), 40, 8, x)
 #define	L2BLK_GET_TYPE(field)		BF64_GET((field), 48, 8)
 #define	L2BLK_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
 #define	L2BLK_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
 #define	L2BLK_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
-#define	L2BLK_GET_PREFETCH(field)	BF64_GET((field), 57, 1)
-#define	L2BLK_SET_PREFETCH(field, x)	BF64_SET((field), 57, 1, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\
