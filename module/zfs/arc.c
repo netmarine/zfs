@@ -9800,7 +9800,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	bcopy(l2dhdr->dh_start_lbps, lbps, sizeof (lbps));
 
 	/* Start the rebuild process */
-	for (i = 0; ; i++) {
+	for (;;) {
 		if (!l2arc_log_blkptr_valid(dev, &lbps[0]))
 			break;
 
@@ -9835,6 +9835,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		l2arc_log_blk_restore(dev, this_lb,
 		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop),
 		    lbps[0].lbp_daddr);
+		i++;
 
 		/*
 		 * log block restored, include its pointer in the list of
@@ -9850,6 +9851,30 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		mutex_exit(&dev->l2ad_mtx);
 		vdev_space_update(vd,
 		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop), 0, 0);
+
+		/*
+		 * Protection against loops of log blocks:
+		 *
+		 *				       l2ad_hand  l2ad_evict
+		 *                                         V	      V
+		 * l2ad_start |=======================================| l2ad_end
+		 *             -----|||----|||---|||----|||
+		 *                  (3)    (2)   (1)    (0)
+		 *             ---|||---|||----|||---|||
+		 *		  (7)   (6)    (5)   (4)
+		 *
+		 * In this situation the pointer of log block (4) passes
+		 * l2arc_log_blkptr_valid() but the log block should not be
+		 * restored as it is overwritten by the payload of log block
+		 * (0). Only log blocks (0)-(3) should be restored. We check
+		 * whether l2ad_evict lies in between the next log block
+		 * offset (lbps[1].lbp_daddr) and the present log block offset
+		 * (lbps[0].lbp_daddr). If true and this isn't the first pass,
+		 * we are looping from the beginning and we should stop.
+		 */
+		if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
+		    lbps[0].lbp_daddr, dev->l2ad_evict) && !dev->l2ad_first)
+			goto out;
 
 		for (;;) {
 			mutex_enter(&l2arc_rebuild_thr_lock);
@@ -9874,36 +9899,6 @@ l2arc_rebuild(l2arc_dev_t *dev)
 			 * the lock again.
 			 */
 			delay(1);
-		}
-
-		/*
-		 * Protection against loops of log blocks:
-		 *
-		 *				       l2ad_hand  l2ad_evict
-		 *                                         V	      V
-		 * l2ad_start |=======================================| l2ad_end
-		 *             -----|||----|||---|||----|||
-		 *                  (3)    (2)   (1)    (0)
-		 *             ---|||---|||----|||---|||
-		 *		  (7)   (6)    (5)   (4)
-		 *
-		 * In this situation the pointer of log block (4) passes
-		 * l2arc_log_blkptr_valid() but the log block should not be
-		 * restored as it is overwritten by the payload of log block
-		 * (0). Only log blocks (0)-(3) should be restored. We check
-		 * whether l2ad_evict lies in between the next log block
-		 * offset (lbps[1].lbp_daddr) and the present log block offset
-		 * (lbps[0].lbp_daddr). If true and this isn't the first pass,
-		 * we are looping from the beginning and we should stop.
-		 */
-		if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
-		    lbps[0].lbp_daddr, dev->l2ad_evict) && !dev->l2ad_first) {
-			/*
-			 * If we break here, we need to count the
-			 * currently restored block.
-			 */
-			i++;
-			goto out;
 		}
 
 		/*

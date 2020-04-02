@@ -2980,12 +2980,11 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 
 	dev.l2ad_first = !!(l2dhdr.dh_flags & L2ARC_DEV_HDR_EVICT_FIRST);
 
-	for (i = 0; ; i++) {
-		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
-
+	for (;;) {
 		if (!l2arc_log_blkptr_valid(&dev, &lbps[0]))
 			break;
 
+		psize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
 		if (pread64(fd, &this_lb, psize, lbps[0].lbp_daddr) != psize) {
 			(void) printf("Error while reading next log block\n\n");
 			break;
@@ -3022,8 +3021,9 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			break;
 		}
 
+		i++;
 		if (dump_opt['l'] > 1) {
-			(void) printf("lb[%4d]\tmagic: %llu\n", i + 1,
+			(void) printf("lb[%4d]\tmagic: %llu\n", i,
 			    (u_longlong_t)this_lb.lb_magic);
 			(void) printf("|\t\tdaddr: %llu\n",
 			    (u_longlong_t)lbps[0].lbp_daddr);
@@ -3056,14 +3056,8 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			    this_lb.lb_entries, i);
 
 		if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
-		    lbps[0].lbp_daddr, dev.l2ad_evict) && !dev.l2ad_first) {
-			/*
-			 * If we break here, we need to count the
-			 * currently restored block.
-			 */
-			i++;
+		    lbps[0].lbp_daddr, dev.l2ad_evict) && !dev.l2ad_first)
 			break;
-		}
 
 		lbps[0] = lbps[1];
 		lbps[1] = this_lb.lb_prev_lbp;
