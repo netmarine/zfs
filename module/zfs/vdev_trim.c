@@ -136,6 +136,31 @@ unsigned int zfs_trim_queue_limit = 10;
 unsigned int zfs_trim_txg_batch = 32;
 
 /*
+ * The trim_args are a control structure which describe how a leaf vdev
+ * should be trimmed.  The core elements are the vdev, the metaslab being
+ * trimmed and a range tree containing the extents to TRIM.  All provided
+ * ranges must be within the metaslab.
+ */
+typedef struct trim_args {
+	/*
+	 * These fields are set by the caller of vdev_trim_ranges().
+	 */
+	vdev_t		*trim_vdev;		/* Leaf vdev to TRIM */
+	metaslab_t	*trim_msp;		/* Disabled metaslab */
+	range_tree_t	*trim_tree;		/* TRIM ranges (in metaslab) */
+	trim_type_t	trim_type;		/* Manual or auto TRIM */
+	uint64_t	trim_extent_bytes_max;	/* Maximum TRIM I/O size */
+	uint64_t	trim_extent_bytes_min;	/* Minimum TRIM I/O size */
+	enum trim_flag	trim_flags;		/* TRIM flags (secure) */
+
+	/*
+	 * These fields are updated by vdev_trim_ranges().
+	 */
+	hrtime_t	trim_start_time;	/* Start time */
+	uint64_t	trim_bytes_done;	/* Bytes trimmed */
+} trim_args_t;
+
+/*
  * Determines whether a vdev_trim_thread() should be stopped.
  */
 static boolean_t
@@ -494,7 +519,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
  * be set in the trim_args structure.  See the trim_args definition for
  * additional information.
  */
-int
+static int
 vdev_trim_ranges(trim_args_t *ta)
 {
 	vdev_t *vd = ta->trim_vdev;
@@ -1400,6 +1425,52 @@ vdev_autotrim_restart(spa_t *spa)
 		vdev_autotrim(spa);
 }
 
+/*
+ * A wrapper which calls vdev_trim_ranges(). It is intended to be called
+ * on leaf vdevs.
+ */
+int
+vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
+{
+	trim_args_t		ta;
+	range_seg_t 		physical_rs;
+	int			error;
+	physical_rs.rs_start = start;
+	physical_rs.rs_end = start + size;
+
+	ASSERT(vdev_is_concrete(vd));
+	ASSERT(vd->vdev_ops->vdev_op_leaf);
+
+	ta.trim_vdev = vd;
+	ta.trim_tree = range_tree_create(NULL, NULL);
+	ta.trim_type = type;
+	ta.trim_extent_bytes_max = zfs_trim_extent_bytes_max;
+	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
+	ta.trim_flags = 0;
+
+	ASSERT3U(physical_rs.rs_end, >=, physical_rs.rs_start);
+
+	if (physical_rs.rs_end > physical_rs.rs_start) {
+		range_tree_add(ta.trim_tree, physical_rs.rs_start,
+		    physical_rs.rs_end - physical_rs.rs_start);
+	} else {
+		ASSERT3U(physical_rs.rs_end, ==, physical_rs.rs_start);
+	}
+
+	error = vdev_trim_ranges(&ta);
+
+	mutex_enter(&vd->vdev_trim_io_lock);
+	while (vd->vdev_trim_inflight[ta.trim_type] > 0) {
+		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
+	}
+	mutex_exit(&vd->vdev_trim_io_lock);
+
+	range_tree_vacate(ta.trim_tree, NULL, NULL);
+	range_tree_destroy(ta.trim_tree);
+
+	return (error);
+}
+
 #if defined(_KERNEL)
 EXPORT_SYMBOL(vdev_trim);
 EXPORT_SYMBOL(vdev_trim_stop);
@@ -1410,7 +1481,7 @@ EXPORT_SYMBOL(vdev_autotrim);
 EXPORT_SYMBOL(vdev_autotrim_stop_all);
 EXPORT_SYMBOL(vdev_autotrim_stop_wait);
 EXPORT_SYMBOL(vdev_autotrim_restart);
-EXPORT_SYMBOL(vdev_trim_ranges);
+EXPORT_SYMBOL(vdev_trim_simple);
 
 /* BEGIN CSTYLED */
 module_param(zfs_trim_extent_bytes_max, uint, 0644);

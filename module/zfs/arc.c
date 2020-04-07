@@ -6568,33 +6568,6 @@ arc_freed(spa_t *spa, const blkptr_t *bp)
 	 */
 	if (!HDR_HAS_L1HDR(hdr) || (!HDR_IO_IN_PROGRESS(hdr) &&
 	    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt))) {
-
-		/*
-		 * If the header has an L2ARC part acquire the l2ad_mtx.
-		 */
-		if (HDR_HAS_L2HDR(hdr)) {
-			l2arc_dev_t *dev = hdr->b_l2hdr.b_dev;
-			mutex_enter(&dev->l2ad_mtx);
-
-			/*
-			 * Even though we checked this conditional above, we
-			 * need to check this again now that we have the
-			 * l2ad_mtx. This is because we could be racing with
-			 * another thread calling l2arc_evict() which might have
-			 * destroyed this header's L2 portion as we were waiting
-			 * to acquire the l2ad_mtx. If successful add the soon
-			 * to be freed buffer in the trim queue for L2ARC.
-			 */
-			if (HDR_HAS_L2HDR(hdr) &&
-			    dev->l2ad_vdev->vdev_has_trim) {
-				range_tree_add(dev->l2ad_ta->trim_tree,
-				    hdr->b_l2hdr.b_daddr -
-				    VDEV_LABEL_START_SIZE,
-				    vdev_psize_to_asize(dev->l2ad_vdev,
-				    HDR_GET_PSIZE(hdr)));
-			}
-			mutex_exit(&dev->l2ad_mtx);
-		}
 		arc_change_state(arc_anon, hdr, hash_lock);
 		arc_hdr_destroy(hdr);
 		mutex_exit(hash_lock);
@@ -8713,7 +8686,6 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	uint64_t 		taddr, lb_ptr_daddr, psize;
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf, *lb_ptr_buf_prev;
 	vdev_t			*vd = dev->l2ad_vdev;
-	trim_args_t		*ta = dev->l2ad_ta;
 	boolean_t 		rerun;
 
 	buflist = &dev->l2ad_buflist;
@@ -8755,8 +8727,16 @@ top:
 		} else {
 			taddr = dev->l2ad_hand + distance;
 		}
-		DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *,
-		    buflist, uint64_t, taddr, boolean_t, all);
+
+		/*
+		 * Trim the space to be evicted. We have already checked that
+		 * we do not evict the whole device.
+		 */
+		if (vd->vdev_has_trim && dev->l2ad_evict < taddr) {
+			vdev_trim_simple(vd,
+			    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
+			    taddr - dev->l2ad_evict, TRIM_TYPE_AUTO);
+		}
 
 		/*
 		 * This check has to be after deciding whether to iterate
@@ -8771,14 +8751,16 @@ top:
 		}
 		dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 	}
+	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *,
+	    buflist, uint64_t, taddr, boolean_t, all);
 
 retry:
 	mutex_enter(&dev->l2ad_mtx);
 	/*
-	 * We have to account for evicted log blocks. Run
-	 * vdev_space_update() on log blocks whose offset (in bytes)
-	 * is before the evicted offset (in bytes) by searching in the
-	 * list of pointers to log blocks present in the L2ARC device.
+	 * We have to account for evicted log blocks. Run vdev_space_update()
+	 * on log blocks whose offset (in bytes) is before the evicted offset
+	 * (in bytes) by searching in the list of pointers to log blocks
+	 * present in the L2ARC device.
 	 */
 	for (lb_ptr_buf = list_tail(&dev->l2ad_lbptr_list); lb_ptr_buf;
 	    lb_ptr_buf = lb_ptr_buf_prev) {
@@ -8793,11 +8775,6 @@ retry:
 			break;
 		} else {
 			vdev_space_update(vd, -psize, 0, 0);
-			if (!all && vd->vdev_has_trim) {
-				range_tree_add(ta->trim_tree,
-				    lb_ptr_daddr -
-				    VDEV_LABEL_START_SIZE, psize);
-			}
 			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
@@ -8845,14 +8822,6 @@ retry:
 			break;
 		}
 
-		if (!all && vd->vdev_has_trim) {
-			range_tree_add(ta->trim_tree,
-			    hdr->b_l2hdr.b_daddr -
-			    VDEV_LABEL_START_SIZE,
-			    vdev_psize_to_asize(vd,
-			    HDR_GET_PSIZE(hdr)));
-		}
-
 		if (!HDR_HAS_L1HDR(hdr)) {
 			ASSERT(!HDR_L2_READING(hdr));
 			/*
@@ -8883,23 +8852,6 @@ retry:
 	mutex_exit(&dev->l2ad_mtx);
 
 out:
-	/*
-	 * Trim the evicted space if the device supports it
-	 */
-	if (!range_tree_is_empty(ta->trim_tree)) {
-		if (vd->vdev_has_trim) {
-		/* Issue the trim */
-			vdev_trim_ranges(ta);
-			mutex_enter(&vd->vdev_trim_io_lock);
-			while (vd->vdev_trim_inflight[ta->trim_type] > 0) {
-				cv_wait(&vd->vdev_trim_io_cv,
-				    &vd->vdev_trim_io_lock);
-			}
-			mutex_exit(&vd->vdev_trim_io_lock);
-		}
-		range_tree_vacate(ta->trim_tree, NULL, NULL);
-	}
-
 	if (rerun) {
 		/*
 		 * Bump device hand to the device start if it is approaching the
@@ -9448,18 +9400,11 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_end = VDEV_LABEL_START_SIZE + vdev_get_min_asize(vd);
 	ASSERT3U(adddev->l2ad_start, <, adddev->l2ad_end);
 	adddev->l2ad_hand = adddev->l2ad_start;
+	adddev->l2ad_evict = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
 	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
-
-	adddev->l2ad_ta = kmem_zalloc(sizeof (trim_args_t), KM_SLEEP);
-	adddev->l2ad_ta->trim_vdev = vd;
-	adddev->l2ad_ta->trim_tree = range_tree_create(NULL, NULL);
-	adddev->l2ad_ta->trim_type = TRIM_TYPE_AUTO;
-	adddev->l2ad_ta->trim_extent_bytes_max = zfs_trim_extent_bytes_max;
-	adddev->l2ad_ta->trim_extent_bytes_min = zfs_trim_extent_bytes_min;
-	adddev->l2ad_ta->trim_flags = 0;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -9568,11 +9513,6 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 */
 		bzero(l2dhdr, l2dhdr_asize);
 		l2arc_dev_hdr_update(dev);
-		if (vd->vdev_has_trim) {
-			range_tree_add(dev->l2ad_ta->trim_tree,
-			    dev->l2ad_start - VDEV_LABEL_START_SIZE,
-			    dev->l2ad_end - dev->l2ad_start);
-		}
 	}
 }
 
@@ -9619,9 +9559,6 @@ l2arc_remove_vdev(vdev_t *vd)
 	list_destroy(&remdev->l2ad_lbptr_list);
 	mutex_destroy(&remdev->l2ad_mtx);
 	zfs_refcount_destroy(&remdev->l2ad_alloc);
-	range_tree_vacate(remdev->l2ad_ta->trim_tree, NULL, NULL);
-	range_tree_destroy(remdev->l2ad_ta->trim_tree);
-	kmem_free(remdev->l2ad_ta, sizeof (trim_args_t));
 	kmem_free(remdev->l2ad_dev_hdr, remdev->l2ad_dev_hdr_asize);
 	vmem_free(remdev, sizeof (l2arc_dev_t));
 }
@@ -10069,9 +10006,9 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
 		zfs_dbgmsg("L2ARC log block cksum failed, offset: %llu, "
-		    "vdev guid: %llu, l2ad_hand: %llu",
+		    "vdev guid: %llu, l2ad_hand: %llu, l2ad_evict: %llu",
 		    this_lbp->lbp_daddr, dev->l2ad_vdev->vdev_guid,
-		    dev->l2ad_hand);
+		    dev->l2ad_hand, dev->l2ad_evict);
 		err = SET_ERROR(ECKSUM);
 		goto cleanup;
 	}

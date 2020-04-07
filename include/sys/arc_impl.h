@@ -31,8 +31,6 @@
 
 #include <sys/arc.h>
 #include <sys/zio_crypt.h>
-#include <sys/vdev_trim.h>
-#include <sys/range_tree.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -384,7 +382,6 @@ typedef struct l2arc_dev {
 	boolean_t		l2ad_rebuild_cancel;
 	boolean_t		l2ad_rebuild_began;
 	uint64_t		l2ad_log_entries;   /* entries per log blk  */
-	trim_args_t		*l2ad_ta;
 	uint64_t		l2ad_evict;	 /* evicted offset in bytes */
 	/* List of pointers to log blocks present in the L2ARC device */
 	list_t			l2ad_lbptr_list;
