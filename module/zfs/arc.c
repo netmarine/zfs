@@ -8307,46 +8307,42 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 
 top:
 	rerun = B_FALSE;
-	/*
-	 * If we evict all buffers on the cache device from ARC there is no
-	 * subsequent call to l2arc_write_buffers() so we don't update the
-	 * header of the cache device and thus don't bother updating the evict
-	 * hand. When rebuilding L2ARC we retrieve the evict hand from the
-	 * header of the device. Of note, l2arc_evict() does not actually
-	 * delete buffers from the cache device, but keeping track of the evict
-	 * hand will be usefull when TRIM is implemented.
-	 */
-	if (!all) {
-		if (dev->l2ad_hand >= (dev->l2ad_end - distance)) {
-			/*
-			 * When there is no space to accomodate upcoming writes,
-			 * evict to the end. Then bump the write and evict hands
-			 * to the start and iterate. This iteration does not
-			 * happen indefinitely as we make sure in
-			 * l2arc_write_size() that when the write hand is reset,
-			 * the write size does not exceed the end of the device.
-			 */
-			rerun = B_TRUE;
-			taddr = dev->l2ad_end;
-		} else {
-			taddr = dev->l2ad_hand + distance;
-		}
-		DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *,
-		    buflist, uint64_t, taddr, boolean_t, all);
-
+	if (dev->l2ad_hand >= (dev->l2ad_end - distance)) {
 		/*
-		 * This check has to be after deciding whether to iterate
-		 * (rerun).
+		 * When there is no space to accomodate upcoming writes,
+		 * evict to the end. Then bump the write and evict hands
+		 * to the start and iterate. This iteration does not
+		 * happen indefinitely as we make sure in
+		 * l2arc_write_size() that when the write hand is reset,
+		 * the write size does not exceed the end of the device.
 		 */
-		if (dev->l2ad_first) {
-			/*
-			 * This is the first sweep through the device. There is
-			 * nothing to evict.
-			 */
-			goto out;
-		}
-		dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
+		rerun = B_TRUE;
+		taddr = dev->l2ad_end;
+	} else {
+		taddr = dev->l2ad_hand + distance;
 	}
+	DTRACE_PROBE4(l2arc__evict, l2arc_dev_t *, dev, list_t *, buflist,
+	    uint64_t, taddr, boolean_t, all);
+
+	/*
+	 * This check has to be placed after deciding whether to iterate
+	 * (rerun).
+	 */
+	if (!all && dev->l2ad_first) {
+		/*
+		 * This is the first sweep through the device. There is
+		 * nothing to evict.
+		 */
+		goto out;
+	}
+
+	/*
+	 * When rebuilding L2ARC we retrieve the evict hand from the header of
+	 * the device. Of note, l2arc_evict() does not actually delete buffers
+	 * from the cache device, but keeping track of the evict hand will be
+	 * usefull when TRIM is implemented.
+	 */
+	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
 retry:
 	mutex_enter(&dev->l2ad_mtx);
