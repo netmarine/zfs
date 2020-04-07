@@ -8731,6 +8731,19 @@ top:
 		}
 
 		/*
+		 * When rebuilding L2ARC we retrieve the evict hand from the
+		 * header of the device. Of note, l2arc_evict() does not
+		 * actually delete buffers from the cache device, but trimming
+		 * may do so depending on the hardware implementation. Thus
+		 * keeping track of the evict hand is useful. In case we evict
+		 * everything (boolean all) we do not trim and there is no
+		 * subsequent call to l2arc_write_buffers() so the header of
+		 * the device and dh_evict will not be updated, which is the
+		 * intended behaviour.
+		 */
+		dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
+
+		/*
 		 * This check has to be placed after deciding whether to iterate
 		 * (rerun).
 		 */
@@ -8742,14 +8755,6 @@ top:
 			goto out;
 		}
 	}
-
-	/*
-	 * When rebuilding L2ARC we retrieve the evict hand from the header of
-	 * the device. Of note, l2arc_evict() does not actually delete buffers
-	 * from the cache device, but keeping track of the evict hand will be
-	 * usefull when TRIM is implemented.
-	 */
-	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
 retry:
 	mutex_enter(&dev->l2ad_mtx);
