@@ -3524,6 +3524,25 @@ dump_l2arc_log_entries(uint64_t log_entries,
 }
 
 static void
+dump_l2arc_log_blkptr(l2arc_log_blkptr_t lbps)
+{
+	(void) printf("|\t\tdaddr: %llu\n", (u_longlong_t)lbps.lbp_daddr);
+	(void) printf("|\t\tpayload_asize: %llu\n",
+	    (u_longlong_t)lbps.lbp_payload_asize);
+	(void) printf("|\t\tpayload_start: %llu\n",
+	    (u_longlong_t)lbps.lbp_payload_start);
+	(void) printf("|\t\tlsize: %llu\n",
+	    (u_longlong_t)L2BLK_GET_LSIZE((&lbps)->lbp_prop));
+	(void) printf("|\t\tpsize: %llu\n",
+	    (u_longlong_t)L2BLK_GET_PSIZE((&lbps)->lbp_prop));
+	(void) printf("|\t\tcompralgo: %llu\n",
+	    (u_longlong_t)L2BLK_GET_COMPRESS((&lbps)->lbp_prop));
+	(void) printf("|\t\tcksumalgo: %llu\n",
+	    (u_longlong_t)L2BLK_GET_CHECKSUM((&lbps)->lbp_prop));
+	(void) printf("|\n\n");
+}
+
+static void
 dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 {
 	l2arc_log_blk_phys_t this_lb;
@@ -3532,7 +3551,6 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 	abd_t *abd;
 	zio_cksum_t cksum;
 	int i = 0, failed = 0;
-	boolean_t inval_cksum;
 	l2arc_dev_t dev;
 
 	print_l2arc_log_blocks();
@@ -3567,9 +3585,9 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		fletcher_4_native_varsize(&this_lb, psize, &cksum);
 		if (!ZIO_CHECKSUM_EQUAL(cksum, lbps[0].lbp_cksum)) {
 			failed++;
-			inval_cksum = B_TRUE;
-		} else {
-			inval_cksum = B_FALSE;
+			(void) printf("Invalid cksum\n");
+			dump_l2arc_log_blkptr(lbps[0]);
+			break;
 		}
 
 		switch (L2BLK_GET_COMPRESS((&lbps[0])->lbp_prop)) {
@@ -3599,30 +3617,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		if (dump_opt['l'] > 1) {
 			(void) printf("lb[%4d]\tmagic: %llu\n", i,
 			    (u_longlong_t)this_lb.lb_magic);
-			(void) printf("|\t\tdaddr: %llu\n",
-			    (u_longlong_t)lbps[0].lbp_daddr);
-			(void) printf("|\t\tpayload_asize: %llu\n",
-			    (u_longlong_t)lbps[0].lbp_payload_asize);
-			(void) printf("|\t\tpayload_start: %llu\n",
-			    (u_longlong_t)lbps[0].lbp_payload_start);
-			(void) printf("|\t\tlsize: %llu\n",
-			    (u_longlong_t)L2BLK_GET_LSIZE(
-			    (&lbps[0])->lbp_prop));
-			(void) printf("|\t\tpsize: %llu\n",
-			    (u_longlong_t)L2BLK_GET_PSIZE(
-			    (&lbps[0])->lbp_prop));
-			(void) printf("|\t\tcompralgo: %llu\n",
-			    (u_longlong_t)L2BLK_GET_COMPRESS(
-			    (&lbps[0])->lbp_prop));
-			(void) printf("|\t\tcksumalgo: %llu\n",
-			    (u_longlong_t)L2BLK_GET_CHECKSUM(
-			    (&lbps[0])->lbp_prop));
-			if (inval_cksum) {
-				(void) printf("|\t\t! invalid cksum\n");
-			} else {
-				(void) printf("|\t\tvalid cksum\n");
-			}
-			(void) printf("|\n\n");
+			dump_l2arc_log_blkptr(lbps[0]);
 		}
 
 		if (dump_opt['l'] > 2)
@@ -3637,7 +3632,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 		lbps[1] = this_lb.lb_prev_lbp;
 	}
 
-	(void) printf("log_blk_count:\t %d with valid cksum\n", i - failed);
+	(void) printf("log_blk_count:\t %d with valid cksum\n", i);
 	(void) printf("\t\t %d with invalid cksum\n\n", failed);
 }
 
