@@ -8340,7 +8340,7 @@ top:
 	 * When rebuilding L2ARC we retrieve the evict hand from the header of
 	 * the device. Of note, l2arc_evict() does not actually delete buffers
 	 * from the cache device, but keeping track of the evict hand will be
-	 * usefull when TRIM is implemented.
+	 * useful when TRIM is implemented.
 	 */
 	dev->l2ad_evict = MAX(dev->l2ad_evict, taddr);
 
@@ -8445,7 +8445,11 @@ retry:
 	mutex_exit(&dev->l2ad_mtx);
 
 out:
-	if (rerun) {
+	/*
+	 * We need to check if we evict all buffers, otherwise we may iterate
+	 * unnecessarily.
+	 */
+	if (!all && rerun) {
 		/*
 		 * Bump device hand to the device start if it is approaching the
 		 * end. l2arc_evict() has already evicted ahead for this case.
