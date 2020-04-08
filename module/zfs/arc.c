@@ -9884,9 +9884,11 @@ out:
 		zfs_dbgmsg("L2ARC rebuild disabled");
 	} else if (err == 0 && i > 0) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_success);
-		zfs_dbgmsg("L2ARC successfully rebuilt, %d blocks", i);
+		zfs_dbgmsg("L2ARC successfully rebuilt, "
+		    "restored %d blocks", i);
 	} else if (err != 0) {
-		zfs_dbgmsg("L2ARC rebuild aborted");
+		zfs_dbgmsg("L2ARC rebuild aborted, "
+		    "restored %d blocks", i);
 	}
 
 	if (lock_held)
