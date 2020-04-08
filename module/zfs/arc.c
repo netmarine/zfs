@@ -8859,7 +8859,11 @@ retry:
 	mutex_exit(&dev->l2ad_mtx);
 
 out:
-	if (rerun) {
+	/*
+	 * We need to check if we evict all buffers, otherwise we may iterate
+	 * unnecessarily.
+	 */
+	if (!all && rerun) {
 		/*
 		 * Bump device hand to the device start if it is approaching the
 		 * end. l2arc_evict() has already evicted ahead for this case.
