@@ -8080,7 +8080,7 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 static uint64_t
 l2arc_write_size(l2arc_dev_t *dev)
 {
-	uint64_t size, dev_size;
+	uint64_t size, dev_size, tsize;
 
 	/*
 	 * Make sure our globals have meaningful values in case the user
@@ -8103,7 +8103,11 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 * iteration can occur.
 	 */
 	dev_size = dev->l2ad_end - dev->l2ad_start;
-	if ((size + l2arc_log_blk_overhead(size, dev)) >= dev_size) {
+	tsize = size + l2arc_log_blk_overhead(size, dev);
+	if (dev->l2ad_vdev->vdev_has_trim)
+		tsize = MAX(64 * 1024 * 1024, 2 * tsize);
+
+	if (tsize >= dev_size) {
 		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
 		    "plus the overhead of log blocks (persistent L2ARC, "
 		    "%llu bytes) exceeds the size of the cache device "
@@ -8696,9 +8700,10 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	distance += l2arc_log_blk_overhead(distance, dev);
 	if (vd->vdev_has_trim) {
 		/*
-		 * Trim ahead 64MB or the write size, whichever is larger.
+		 * Trim ahead 64MB or twice the write size, whichever is
+		 * greater.
 		 */
-		distance = MAX(64 * 1024 * 1024, distance);
+		distance = MAX(64 * 1024 * 1024, 2 * distance);
 	}
 
 top:
