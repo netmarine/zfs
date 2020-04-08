@@ -886,6 +886,17 @@ static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 
 /*
+ * L2ARC TRIM
+ * l2arc_trim_ahead : A ZFS module parameter that controls how much ahead of
+ * 		the current write size we should TRIM. It is defined as a
+ * 		percentage of the write size. The minimum TRIM size is 64MB.
+ * 		If set to 100 and the write size is greater than 64MB we don't
+ * 		trim ahead. The default is twice the write size.
+ * 		If set to 0, TRIM is disabled for L2ARC.
+ */
+unsigned long l2arc_trim_ahead = 200;
+
+/*
  * Performance tuning of L2ARC persistence:
  *
  * l2arc_rebuild_enabled : A ZFS module parameter that controls whether adding
@@ -8104,8 +8115,8 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 */
 	dev_size = dev->l2ad_end - dev->l2ad_start;
 	tsize = size + l2arc_log_blk_overhead(size, dev);
-	if (dev->l2ad_vdev->vdev_has_trim)
-		tsize = MAX(64 * 1024 * 1024, 2 * tsize);
+	if (dev->l2ad_vdev->vdev_has_trim && l2arc_trim_ahead > 0)
+		tsize = MAX(64 * 1024 * 1024, (tsize * l2arc_trim_ahead) / 100);
 
 	if (tsize >= dev_size) {
 		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
@@ -8698,12 +8709,13 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	 * We need to add in the worst case scenario of log block overhead.
 	 */
 	distance += l2arc_log_blk_overhead(distance, dev);
-	if (vd->vdev_has_trim) {
+	if (vd->vdev_has_trim && l2arc_trim_ahead > 0) {
 		/*
 		 * Trim ahead 64MB or twice the write size, whichever is
 		 * greater.
 		 */
-		distance = MAX(64 * 1024 * 1024, 2 * distance);
+		distance = MAX(64 * 1024 * 1024,
+		    (distance * l2arc_trim_ahead) / 100);
 	}
 
 top:
@@ -8729,7 +8741,8 @@ top:
 		/*
 		 * Trim the space to be evicted.
 		 */
-		if (vd->vdev_has_trim && dev->l2ad_evict < taddr) {
+		if (vd->vdev_has_trim && dev->l2ad_evict < taddr &&
+		    l2arc_trim_ahead > 0) {
 			vdev_trim_simple(vd,
 			    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
 			    taddr - dev->l2ad_evict, TRIM_TYPE_AUTO);
@@ -10614,6 +10627,9 @@ MODULE_PARM_DESC(l2arc_headroom, "Number of max device writes to precache");
 
 module_param(l2arc_headroom_boost, ulong, 0644);
 MODULE_PARM_DESC(l2arc_headroom_boost, "Compressed l2arc_headroom multiplier");
+
+module_param(l2arc_trim_ahead, ulong, 0644);
+MODULE_PARM_DESC(l2arc_trim_ahead, "TRIM ahead L2ARC multiplier");
 
 module_param(l2arc_feed_secs, ulong, 0644);
 MODULE_PARM_DESC(l2arc_feed_secs, "Seconds between L2ARC writing");
