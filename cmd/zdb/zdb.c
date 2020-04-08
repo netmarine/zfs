@@ -3497,8 +3497,8 @@ dump_l2arc_log_entries(uint64_t log_entries,
 {
 	for (int j = 0; j < log_entries; j++) {
 		dva_t dva = le[j].le_dva;
-		(void) printf("lb[%4d]\tle[%4d]\tDVA asize: %llu,"
-		    "vdev: %llu, offset: %llu\n", i + 1, j + 1,
+		(void) printf("lb[%4d]\tle[%4d]\tDVA asize: %llu, "
+		    "vdev: %llu, offset: %llu\n", i, j + 1,
 		    (u_longlong_t)DVA_GET_ASIZE(&dva),
 		    (u_longlong_t)DVA_GET_VDEV(&dva),
 		    (u_longlong_t)DVA_GET_OFFSET(&dva));
