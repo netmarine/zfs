@@ -8629,9 +8629,10 @@ l2arc_read_done(zio_t *zio)
  * the lock pointer.
  */
 static multilist_sublist_t *
-l2arc_sublist_lock(int list_num, unsigned int idx)
+l2arc_sublist_lock(int list_num)
 {
 	multilist_t *ml = NULL;
+	unsigned int idx;
 
 	ASSERT(list_num >= 0 && list_num < L2ARC_FEED_TYPES);
 
@@ -8652,6 +8653,13 @@ l2arc_sublist_lock(int list_num, unsigned int idx)
 		return (NULL);
 	}
 
+	/*
+	 * Return a randomly-selected sublist. This is acceptable
+	 * because the caller feeds only a little bit of data for each
+	 * call (8MB). Subsequent calls will result in different
+	 * sublists being selected.
+	 */
+	idx = multilist_get_random_index(ml);
 	return (multilist_sublist_lock(ml, idx));
 }
 
@@ -9029,7 +9037,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	l2arc_write_callback_t	*cb = NULL;
 	zio_t 			*pio, *wzio;
 	uint64_t 		guid = spa_load_guid(spa);
-	unsigned int		num_sublists, i = 0;
 
 	ASSERT3P(dev->l2ad_vdev, !=, NULL);
 
@@ -9038,15 +9045,12 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	full = B_FALSE;
 	head = kmem_cache_alloc(hdr_l2only_cache, KM_PUSHPAGE);
 	arc_hdr_set_flags(head, ARC_FLAG_L2_WRITE_HEAD | ARC_FLAG_HAS_L2HDR);
-	num_sublists = multilist_get_num_sublists(
-	    arc_mru->arcs_list[ARC_BUFC_METADATA]);
 
 	/*
 	 * Copy buffers for L2ARC writing.
 	 */
-top:
 	for (int try = 0; try < L2ARC_FEED_TYPES; try++) {
-		multilist_sublist_t *mls = l2arc_sublist_lock(try, i);
+		multilist_sublist_t *mls = l2arc_sublist_lock(try);
 		uint64_t passed_sz = 0;
 
 		VERIFY3P(mls, !=, NULL);
@@ -9236,11 +9240,6 @@ top:
 
 		if (full == B_TRUE)
 			break;
-	}
-
-	if (full == B_FALSE && i < num_sublists - 1) {
-		i++;
-		goto top;
 	}
 
 	/* No buffers selected for writing? */
