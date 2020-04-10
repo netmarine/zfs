@@ -3598,7 +3598,7 @@ dump_l2arc_log_blocks(int fd, l2arc_dev_hdr_phys_t l2dhdr)
 			abd_copy_from_buf_off(abd, &this_lb, 0, psize);
 			zio_decompress_data(L2BLK_GET_COMPRESS(
 			    (&lbps[0])->lbp_prop), abd, &this_lb,
-			    psize, sizeof (this_lb));
+			    psize, sizeof (this_lb), NULL);
 			abd_free(abd);
 			break;
 		default:
