@@ -1689,7 +1689,8 @@ arc_buf_try_copy_decompressed_data(arc_buf_t *buf)
 arc_buf_hdr_t *
 arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
     dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
-    enum zio_compress compress, boolean_t protected, boolean_t prefetch)
+    enum zio_compress compress, uint8_t complevel, boolean_t protected,
+    boolean_t prefetch)
 {
 	arc_buf_hdr_t	*hdr;
 
@@ -1702,6 +1703,7 @@ arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
 	HDR_SET_LSIZE(hdr, size);
 	HDR_SET_PSIZE(hdr, psize);
 	arc_hdr_set_compress(hdr, compress);
+	hdr->b_complevel = complevel;
 	if (protected)
 		arc_hdr_set_flags(hdr, ARC_FLAG_PROTECTED);
 	if (prefetch)
@@ -9767,7 +9769,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	hdr = arc_buf_alloc_l2only(L2BLK_GET_LSIZE((le)->le_prop), type,
 	    dev, le->le_dva, le->le_daddr,
 	    L2BLK_GET_PSIZE((le)->le_prop), le->le_birth,
-	    L2BLK_GET_COMPRESS((le)->le_prop),
+	    L2BLK_GET_COMPRESS((le)->le_prop), le->le_complevel,
 	    L2BLK_GET_PROTECTED((le)->le_prop),
 	    L2BLK_GET_PREFETCH((le)->le_prop));
 	asize = vdev_psize_to_asize(dev->l2ad_vdev,
@@ -10083,6 +10085,7 @@ l2arc_log_blk_insert(l2arc_dev_t *dev, const arc_buf_hdr_t *hdr)
 	L2BLK_SET_LSIZE((le)->le_prop, HDR_GET_LSIZE(hdr));
 	L2BLK_SET_PSIZE((le)->le_prop, HDR_GET_PSIZE(hdr));
 	L2BLK_SET_COMPRESS((le)->le_prop, HDR_GET_COMPRESS(hdr));
+	le->le_complevel = hdr->b_complevel;
 	L2BLK_SET_TYPE((le)->le_prop, hdr->b_type);
 	L2BLK_SET_PROTECTED((le)->le_prop, !!(HDR_PROTECTED(hdr)));
 	L2BLK_SET_PREFETCH((le)->le_prop, !!(HDR_PREFETCH(hdr)));

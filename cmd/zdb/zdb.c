@@ -3510,6 +3510,8 @@ dump_l2arc_log_entries(uint64_t log_entries,
 		    (u_longlong_t)L2BLK_GET_PSIZE((&le[j])->le_prop));
 		(void) printf("|\t\t\t\tcompr: %llu\n",
 		    (u_longlong_t)L2BLK_GET_COMPRESS((&le[j])->le_prop));
+		(void) printf("|\t\t\t\tcomplevel: %llu\n",
+		    (u_longlong_t)(&le[j])->le_complevel);
 		(void) printf("|\t\t\t\ttype: %llu\n",
 		    (u_longlong_t)L2BLK_GET_TYPE((&le[j])->le_prop));
 		(void) printf("|\t\t\t\tprotected: %llu\n",
