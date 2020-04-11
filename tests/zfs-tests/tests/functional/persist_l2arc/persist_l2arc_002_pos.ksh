@@ -79,6 +79,7 @@ export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
+log_must zpool set autotrim=on $TESTPOOL
 
 log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 	"-o keyformat=passphrase $TESTPOOL/$TESTFS1"
