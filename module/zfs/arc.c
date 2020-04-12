@@ -8396,9 +8396,11 @@ top:
 		 */
 		if (vd->vdev_has_trim && dev->l2ad_evict < taddr &&
 		    l2arc_trim_ahead > 0) {
+			spa_config_exit(dev->l2ad_spa, SCL_L2ARC, dev);
 			vdev_trim_simple(vd,
 			    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
 			    taddr - dev->l2ad_evict, TRIM_TYPE_AUTO);
+			spa_config_enter(dev->l2ad_spa, SCL_L2ARC, vd, RW_READER);
 		}
 
 		/*
