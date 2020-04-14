@@ -26,11 +26,10 @@
 #	1. Create a pool on file vdevs to trim.
 #	2. Set 'autotrim=on' on pool.
 #	3. Fill the pool with a file larger than the L2ARC vdev.
-#	4. Export and re-import the pool to stop trimming on main vdev.
-#	5. Record autotrim_extents_written.
-#	6. Randomly read the previous written file long enough for the
+#	4. Randomly read the previous written file long enough for the
 #		L2ARC vdev to be filled and overwritten.
-#	7. Verify that autotrim_extents_written has increased.
+#	5. Verify trim IOs of the expected type were issued for the pool.
+#
 
 verify_runnable "global"
 
@@ -42,25 +41,9 @@ function cleanup
 		destroy_pool $TESTPOOL
 	fi
 
-	log_must rm -f $TRIM_VDEVS
-
-	log_must set_tunable64 TRIM_EXTENT_BYTES_MIN $trim_extent_bytes_min
-	log_must set_tunable64 TRIM_TXG_BATCH $trim_txg_batch
-	log_must set_tunable64 VDEV_MIN_MS_COUNT $vdev_min_ms_count
+	log_must rm -f $VDEVS
 }
 log_onexit cleanup
-
-# Minimum trim size is decreased to verify all trim sizes.
-typeset trim_extent_bytes_min=$(get_tunable TRIM_EXTENT_BYTES_MIN)
-log_must set_tunable64 TRIM_EXTENT_BYTES_MIN 4096
-
-# Reduced TRIM_TXG_BATCH to make trimming more frequent.
-typeset trim_txg_batch=$(get_tunable TRIM_TXG_BATCH)
-log_must set_tunable64 TRIM_TXG_BATCH 8
-
-# Increased metaslabs to better simulate larger more realistic devices.
-typeset vdev_min_ms_count=$(get_tunable VDEV_MIN_MS_COUNT)
-log_must set_tunable64 VDEV_MIN_MS_COUNT 32
 
 # The cache device $TRIM_VDEV2 has to be small enough, so that
 # dev->l2ad_hand loops around and dev->l2ad_first=0. Otherwise 
@@ -86,19 +69,18 @@ export DIRECT=1
 # Write to the pool.
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 
-# Export and re-import the pool to stop possible trimming on $TRIM_VDEV1.
-log_must zpool export $TESTPOOL
-log_must zpool import -d $TRIM_DIR $TESTPOOL
-
-typeset l2arc_trim_start=$(get_iostat $TESTPOOL autotrim_extents_written)
-
 # Read randomly from the pool to fill L2ARC.
-export RUNTIME=10
-log_must fio $FIO_SCRIPTS/random_reads.fio
+export RUNTIME=1
 
-typeset l2arc_trim_end=$(get_iostat $TESTPOOL autotrim_extents_written)
+typeset do_once=true
+while $do_once || [[ $l2_size1 -le $l2_size2 ]]; do
+	typeset l2_size1=$(get_arcstat l2_size)
+	log_must fio $FIO_SCRIPTS/random_reads.fio
+	typeset l2_size2=$(get_arcstat l2_size)
+	do_once=false
+done
 
-log_must test $l2arc_trim_end -gt $l2arc_trim_start
+verify_trim_io $TESTPOOL "ind" 10 $TRIM_VDEV2
 
 log_must zpool destroy $TESTPOOL
 log_must rm -f $VDEVS

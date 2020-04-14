@@ -8398,7 +8398,10 @@ top:
 		    l2arc_trim_ahead > 0) {
 			/*
 			 * We have to drop the spa_config lock because
-			 * vdev_trim_range will acquire it.
+			 * vdev_trim_range() will acquire it. l2ad_evict
+			 * already accounts for the label size. To prevent
+			 * vdev_trim_ranges() from adding it again, we subtract
+			 * it from l2ad_evict.
 			 */
 			spa_config_exit(dev->l2ad_spa, SCL_L2ARC, dev);
 			vdev_trim_simple(vd,
