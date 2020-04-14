@@ -1445,7 +1445,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 	ta.trim_tree = range_tree_create(NULL, NULL);
 	ta.trim_type = type;
 	ta.trim_extent_bytes_max = zfs_trim_extent_bytes_max;
-	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
+	ta.trim_extent_bytes_min = SPA_MINBLOCKSIZE;
 	ta.trim_flags = 0;
 
 	ASSERT3U(physical_rs.rs_end, >=, physical_rs.rs_start);
