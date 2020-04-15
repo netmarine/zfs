@@ -48,12 +48,17 @@ function cleanup
 
 	log_must set_tunable32 L2ARC_REBUILD_ENABLED $rebuild_enabled
 	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
+	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
 }
 log_onexit cleanup
 
 # L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
 typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
 log_must set_tunable32 L2ARC_NOPREFETCH 0
+
+# enable TRIM on L2ARC
+typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
+log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 
 # disable L2ARC rebuild
 typeset rebuild_enabled=$(get_tunable L2ARC_REBUILD_ENABLED)
@@ -66,7 +71,6 @@ export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
-log_must zpool set autotrim=on $TESTPOOL
 
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio

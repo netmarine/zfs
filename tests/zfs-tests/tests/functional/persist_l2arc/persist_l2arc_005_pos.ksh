@@ -53,12 +53,15 @@ function cleanup
 	fi
 
 	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
+	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
 }
 log_onexit cleanup
 
 # L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
 typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
+typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
 log_must set_tunable32 L2ARC_NOPREFETCH 0
+log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 
 typeset fill_mb=800
 typeset cache_sz=$(( 2 * $fill_mb ))
@@ -69,7 +72,6 @@ log_must truncate -s ${cache_sz}M $VDEV_CACHE
 typeset log_blk_start=$(get_arcstat l2_log_blk_writes)
 
 log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
-log_must zpool set autotrim=on $TESTPOOL
 
 log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 	"-o keyformat=passphrase $TESTPOOL/$TESTFS1"

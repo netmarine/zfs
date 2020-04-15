@@ -60,14 +60,17 @@ function cleanup
 	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
 	log_must set_tunable32 L2ARC_REBUILD_BLOCKS_MIN_L2SIZE \
 		$rebuild_blocks_min_l2size
+	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
 }
 log_onexit cleanup
 
 # L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
 typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
 typeset rebuild_blocks_min_l2size=$(get_tunable L2ARC_REBUILD_BLOCKS_MIN_L2SIZE)
+typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
 log_must set_tunable32 L2ARC_NOPREFETCH 0
 log_must set_tunable32 L2ARC_REBUILD_BLOCKS_MIN_L2SIZE 0
+log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 
 typeset fill_mb=800
 typeset cache_sz=$(( floor($fill_mb / 2) ))
@@ -76,7 +79,6 @@ export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
-log_must zpool set autotrim=on $TESTPOOL
 
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL

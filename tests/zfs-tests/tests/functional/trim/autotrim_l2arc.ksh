@@ -42,12 +42,15 @@ function cleanup
 	fi
 
 	log_must rm -f $VDEVS
+	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
 }
 log_onexit cleanup
 
 # The cache device $TRIM_VDEV2 has to be small enough, so that
 # dev->l2ad_hand loops around and dev->l2ad_first=0. Otherwise 
 # l2arc_evict() exits before evicting/trimming.
+typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
+log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 VDEVS="$TRIM_VDEV1 $TRIM_VDEV2"
 log_must truncate -s $((MINVDEVSIZE)) $TRIM_VDEV2
 log_must truncate -s $((4 * MINVDEVSIZE)) $TRIM_VDEV1

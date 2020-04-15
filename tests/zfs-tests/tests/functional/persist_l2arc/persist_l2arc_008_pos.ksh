@@ -62,12 +62,15 @@ function cleanup
 	fi
 
 	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
+	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
 }
 log_onexit cleanup
 
 # L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
 typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
+typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
 log_must set_tunable32 L2ARC_NOPREFETCH 0
+log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 
 typeset fill_mb=400
 typeset cache_sz=$(( 3 * $fill_mb ))
@@ -76,7 +79,6 @@ export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
 log_must truncate -s ${cache_sz}M $VDEV_CACHE
 
 log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
-log_must zpool set autotrim=on $TESTPOOL
 
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
