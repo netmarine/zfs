@@ -891,10 +891,9 @@ static void l2arc_read_done(zio_t *);
  * 		the current write size we should TRIM. It is defined as a
  * 		percentage of the write size. The minimum TRIM size is 64MB.
  * 		If set to 100 and the write size is greater than 64MB we don't
- * 		trim ahead. The default is twice the write size.
- * 		If set to 0, TRIM is disabled for L2ARC.
+ * 		trim ahead. The default is 0, TRIM is disabled for L2ARC.
  */
-unsigned long l2arc_trim_ahead = 200;
+unsigned long l2arc_trim_ahead = 0;
 
 /*
  * Performance tuning of L2ARC persistence:

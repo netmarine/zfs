@@ -182,9 +182,24 @@ Default value: \fB2\fR.
 .ad
 .RS 12n
 Scales \fBl2arc_headroom\fR by this percentage when L2ARC contents are being
-successfully compressed before writing. A value of 100 disables this feature.
+successfully compressed before writing. A value of \fB100\fR disables this
+feature.
 .sp
 Default value: \fB200\fR%.
+.RE
+
+.sp
+.ne 2
+.na
+\fBl2arc_trim_ahead\fR (ulong)
+.ad
+.RS 12n
+Trims ahead of the current evict hand on L2ARC devices by this percentage of
+write size. It has a minimum value of 64MB. If set to \fB100\fR we TRIM only
+the space required to accomodate upcoming writes. A value of \fB0\fR disables
+TRIM on L2ARC.
+.sp
+Default value: \fB0\fR%.
 .RE
 
 .sp
