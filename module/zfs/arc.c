@@ -8753,7 +8753,7 @@ top:
 			spa_config_exit(dev->l2ad_spa, SCL_L2ARC, dev);
 			vdev_trim_simple(vd,
 			    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
-			    taddr - dev->l2ad_evict, TRIM_TYPE_AUTO);
+			    taddr - dev->l2ad_evict, TRIM_TYPE_L2ARC);
 			spa_config_enter(dev->l2ad_spa, SCL_L2ARC, vd,
 			    RW_READER);
 		}

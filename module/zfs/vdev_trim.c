@@ -420,6 +420,35 @@ vdev_autotrim_cb(zio_t *zio)
 }
 
 /*
+ * The zio_done_func_t done callback for each L2ARC TRIM issued.  It
+ * is responsible for updating the TRIM stats and limiting the number of
+ * in flight TRIM I/Os.  Automatic TRIM I/Os are best effort and are
+ * never reissued on failure.
+ */
+static void
+vdev_l2arc_trim_cb(zio_t *zio)
+{
+	vdev_t *vd = zio->io_vd;
+
+	mutex_enter(&vd->vdev_trim_io_lock);
+
+	if (zio->io_error != 0) {
+		vd->vdev_stat.vs_trim_errors++;
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_L2ARC,
+		    0, 0, 0, 0, 1, zio->io_orig_size);
+	} else {
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_L2ARC,
+		    1, zio->io_orig_size, 0, 0, 0, 0);
+	}
+
+	ASSERT3U(vd->vdev_trim_inflight[TRIM_TYPE_L2ARC], >, 0);
+	vd->vdev_trim_inflight[TRIM_TYPE_L2ARC]--;
+	cv_broadcast(&vd->vdev_trim_io_cv);
+	mutex_exit(&vd->vdev_trim_io_lock);
+
+	spa_config_exit(vd->vdev_spa, SCL_STATE_ALL, vd);
+}
+/*
  * Returns the average trim rate in bytes/sec for the ta->trim_vdev.
  */
 static uint64_t
@@ -438,6 +467,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 {
 	vdev_t *vd = ta->trim_vdev;
 	spa_t *spa = vd->vdev_spa;
+	void *cb;
 
 	mutex_enter(&vd->vdev_trim_io_lock);
 
@@ -456,8 +486,8 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	ta->trim_bytes_done += size;
 
 	/* Limit in flight trimming I/Os */
-	while (vd->vdev_trim_inflight[0] + vd->vdev_trim_inflight[1] >=
-	    zfs_trim_queue_limit) {
+	while (vd->vdev_trim_inflight[0] + vd->vdev_trim_inflight[1] +
+	    vd->vdev_trim_inflight[2] >= zfs_trim_queue_limit) {
 		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
 	}
 	vd->vdev_trim_inflight[ta->trim_type]++;
@@ -502,10 +532,17 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	if (ta->trim_type == TRIM_TYPE_MANUAL)
 		vd->vdev_trim_offset[txg & TXG_MASK] = start + size;
 
+	if (ta->trim_type == TRIM_TYPE_MANUAL) {
+		cb = vdev_trim_cb;
+	} else if (ta->trim_type == TRIM_TYPE_AUTO) {
+		cb = vdev_autotrim_cb;
+	} else {
+		cb = vdev_l2arc_trim_cb;
+	}
+
 	zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
-	    start, size, ta->trim_type == TRIM_TYPE_MANUAL ?
-	    vdev_trim_cb : vdev_autotrim_cb, NULL,
-	    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL, ta->trim_flags));
+	    start, size, cb, NULL, ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL,
+	    ta->trim_flags));
 	/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
 
 	dmu_tx_commit(tx);
