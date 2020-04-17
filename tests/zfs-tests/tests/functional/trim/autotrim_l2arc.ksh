@@ -24,7 +24,7 @@
 #
 # STRATEGY:
 #	1. Create a pool on file vdevs to trim.
-#	2. Set 'autotrim=on' on pool.
+#	2. Set 'l2arc_trim_ahead = 200' on pool.
 #	3. Fill the pool with a file larger than the L2ARC vdev.
 #	4. Randomly read the previous written file long enough for the
 #		L2ARC vdev to be filled and overwritten.
@@ -54,8 +54,10 @@ log_must set_tunable32 L2ARC_TRIM_AHEAD 200
 VDEVS="$TRIM_VDEV1 $TRIM_VDEV2"
 log_must truncate -s $((MINVDEVSIZE)) $TRIM_VDEV2
 log_must truncate -s $((4 * MINVDEVSIZE)) $TRIM_VDEV1
+typeset VDEV_MIN_MB=$((MINVDEVSIZE * 0.30 / 1024 / 1024))
+
 log_must zpool create -f $TESTPOOL $TRIM_VDEV1 cache $TRIM_VDEV2
-log_must zpool set autotrim=on $TESTPOOL
+verify_vdevs "-le" "$VDEV_MIN_MB" $TRIM_VDEV2
 
 typeset fill_mb=$(( floor(2 * MINVDEVSIZE) ))
 export DIRECTORY=/$TESTPOOL
@@ -83,7 +85,7 @@ while $do_once || [[ $l2_size1 -le $l2_size2 ]]; do
 	do_once=false
 done
 
-verify_trim_io $TESTPOOL "ind" 10 $TRIM_VDEV2
+verify_trim_io $TESTPOOL "ind" 5 $TRIM_VDEV2
 
 log_must zpool destroy $TESTPOOL
 log_must rm -f $VDEVS

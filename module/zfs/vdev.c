@@ -2281,9 +2281,6 @@ vdev_reopen(vdev_t *vd)
 		if (vdev_readable(vd) && vdev_writeable(vd) &&
 		    vd->vdev_aux == &spa->spa_l2cache) {
 			/*
-			 * When reopening we can assume the device label has
-			 * already the attribute l2cache_persistent, since we've
-			 * opened the device in the past and updated the label.
 			 * In case the vdev is present we should evict all ARC
 			 * buffers and pointers to log blocks and reclaim their
 			 * space before restoring its contents to L2ARC.
@@ -2294,6 +2291,15 @@ vdev_reopen(vdev_t *vd)
 				l2arc_add_vdev(spa, vd);
 			}
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
+
+			/*
+			 * Upon cache device reopening we might restore its
+			 * contents to L2ARC. If the header of the device is
+			 * invalid we issue an async TRIM command for the
+			 * whole device which will execute if
+			 * l2arc_trim_ahead > 0.
+			 */
+			spa_async_request(spa, SPA_ASYNC_L2CACHE_TRIM);
 		}
 	} else {
 		(void) vdev_validate(vd);

@@ -789,6 +789,7 @@ extern int bpobj_enqueue_free_cb(void *arg, const blkptr_t *bp, dmu_tx_t *tx);
 #define	SPA_ASYNC_TRIM_RESTART			0x200
 #define	SPA_ASYNC_AUTOTRIM_RESTART		0x400
 #define	SPA_ASYNC_L2CACHE_REBUILD		0x800
+#define	SPA_ASYNC_L2CACHE_TRIM			0x1000
 
 /*
  * Controls the behavior of spa_vdev_remove().

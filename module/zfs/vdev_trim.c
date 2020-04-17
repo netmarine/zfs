@@ -1031,6 +1031,10 @@ static void
 vdev_trim_stop_all_impl(vdev_t *vd, vdev_trim_state_t tgt_state,
     list_t *vd_list)
 {
+	uint64_t i;
+	vdev_t	*vd_l2cache;
+	spa_t	*spa = vd->vdev_spa;
+
 	if (vd->vdev_ops->vdev_op_leaf && vdev_is_concrete(vd)) {
 		mutex_enter(&vd->vdev_trim_lock);
 		vdev_trim_stop(vd, tgt_state, vd_list);
@@ -1038,9 +1042,19 @@ vdev_trim_stop_all_impl(vdev_t *vd, vdev_trim_state_t tgt_state,
 		return;
 	}
 
-	for (uint64_t i = 0; i < vd->vdev_children; i++) {
+	for (i = 0; i < vd->vdev_children; i++) {
 		vdev_trim_stop_all_impl(vd->vdev_child[i], tgt_state,
 		    vd_list);
+	}
+
+	/*
+	 * Iterate over cache devices and request stop trimming the
+	 * whole device in case we export the pool or remove the cache
+	 * device prematurely.
+	 */
+	for (i = 0; i < spa->spa_l2cache.sav_count; i++) {
+		vd_l2cache = spa->spa_l2cache.sav_vdevs[i];
+		vdev_trim_stop_all_impl(vd_l2cache, tgt_state, vd_list);
 	}
 }
 
@@ -1489,6 +1503,8 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 
 	ASSERT(vdev_is_concrete(vd));
 	ASSERT(vd->vdev_ops->vdev_op_leaf);
+	ASSERT(!vd->vdev_detached);
+	ASSERT(!vd->vdev_top->vdev_removing);
 
 	ta.trim_vdev = vd;
 	ta.trim_tree = range_tree_create(NULL, RANGE_SEG64, NULL, 0, 0);
@@ -1506,6 +1522,26 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		ASSERT3U(physical_rs.rs_end, ==, physical_rs.rs_start);
 	}
 
+	if (type == TRIM_TYPE_MANUAL) {
+		vd->vdev_trim_last_offset = 0;
+		vd->vdev_trim_rate = 0;
+		vd->vdev_trim_partial = 0;
+		vd->vdev_trim_secure = 0;
+		vd->vdev_trim_bytes_est = size;
+
+		/*
+		 * The VDEV_LEAF_ZAP_TRIM_* entries may have been updated by
+		 * vdev_trim().  Wait for the updated values to be reflected
+		 * in the zap in order to start with the requested settings.
+		 * Same strategy as in vdev_trim_thread().
+		 */
+		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
+
+		mutex_enter(&vd->vdev_trim_lock);
+		vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
+		mutex_exit(&vd->vdev_trim_lock);
+	}
+
 	error = vdev_trim_ranges(&ta);
 
 	mutex_enter(&vd->vdev_trim_io_lock);
@@ -1516,6 +1552,33 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 
 	range_tree_vacate(ta.trim_tree, NULL, NULL);
 	range_tree_destroy(ta.trim_tree);
+
+	if (type == TRIM_TYPE_MANUAL) {
+		mutex_enter(&vd->vdev_trim_lock);
+		if (!vd->vdev_trim_exit_wanted && vdev_writeable(vd)) {
+			vdev_trim_change_state(vd, VDEV_TRIM_COMPLETE,
+			    vd->vdev_trim_rate, vd->vdev_trim_partial,
+			    vd->vdev_trim_secure);
+		}
+		ASSERT(vd->vdev_trim_thread != NULL ||
+		    vd->vdev_trim_inflight[0] == 0);
+
+		/*
+		 * Drop the vdev_trim_lock while we sync out the txg since it's
+		 * possible that a device might be trying to come online and
+		 * must check to see if it needs to restart a trim. That thread
+		 * will be holding the spa_config_lock which would prevent the
+		 * txg_wait_synced from completing. Same strategy as in
+		 * vdev_trim_thread().
+		 */
+		mutex_exit(&vd->vdev_trim_lock);
+		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
+		mutex_enter(&vd->vdev_trim_lock);
+
+		vd->vdev_trim_thread = NULL;
+		cv_broadcast(&vd->vdev_trim_cv);
+		mutex_exit(&vd->vdev_trim_lock);
+	}
 
 	return (error);
 }

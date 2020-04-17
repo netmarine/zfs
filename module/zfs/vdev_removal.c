@@ -2224,6 +2224,18 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		 * Cache devices can always be removed.
 		 */
 		vd = spa_lookup_by_guid(spa, guid, B_TRUE);
+
+		/*
+		 * Stop trimming the cache device. We need to release the
+		 * config lock to allow the syncing of TRIM transactions
+		 * without releasing the spa_namespace_lock. The same
+		 * strategy is employed in spa_vdev_remove_top().
+		 */
+		spa_vdev_config_exit(spa, NULL,
+		    txg + TXG_CONCURRENT_STATES + TXG_DEFER_SIZE, 0, FTAG);
+		vdev_trim_stop_all(vd, VDEV_TRIM_CANCELED);
+		txg = spa_vdev_config_enter(spa);
+
 		ev = spa_event_create(spa, vd, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
 		spa_vdev_remove_aux(spa->spa_l2cache.sav_config,
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
