@@ -9222,10 +9222,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		dev->l2ad_rebuild = B_TRUE;
 	} else if (spa_writeable(spa)) {
 		/*
-		 * The boolean rebuild is false if reading the device header
-		 * returned an error. In this case TRIM the whole device if
-		 * l2arc_trim_ahead > 0 and create a new header. We zero out
-		 * the memory holding the header to reset dh_start_lbps.
+		 * In this case TRIM the whole device if l2arc_trim_ahead > 0
+		 * and create a new header. We zero out the memory holding the
+		 * header to reset dh_start_lbps.
 		 */
 		if (l2arc_trim_ahead > 0)
 			dev->l2ad_trim_all = B_TRUE;
