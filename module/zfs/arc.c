@@ -8367,8 +8367,8 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	distance += l2arc_log_blk_overhead(distance, dev);
 	if (vd->vdev_has_trim && l2arc_trim_ahead > 0) {
 		/*
-		 * Trim ahead 64MB or twice the write size, whichever is
-		 * greater.
+		 * Trim ahead 64MB or (l2arc_trim_ahead/100) times the write
+		 * size, whichever is greater.
 		 */
 		distance = MAX(64 * 1024 * 1024,
 		    (distance * l2arc_trim_ahead) / 100);
