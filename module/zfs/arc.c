@@ -9898,8 +9898,8 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 
 	/* try to compress the buffer */
 	list_insert_tail(&cb->l2wcb_abd_list, abd_buf);
-	psize = zio_compress_data(ZIO_COMPRESS_LZ4,
-	    abd_buf->abd, tmpbuf, sizeof (*lb));
+	psize = sizeof (*lb);
+	bcopy(lb, tmpbuf, sizeof (*lb));
 
 	/* a log block is never entirely zero */
 	ASSERT(psize != 0);
@@ -9924,19 +9924,11 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	L2BLK_SET_CHECKSUM(
 	    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
 	    ZIO_CHECKSUM_FLETCHER_4);
-	if (asize < sizeof (*lb)) {
-		/* compression succeeded */
-		bzero(tmpbuf + psize, asize - psize);
-		L2BLK_SET_COMPRESS(
-		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
-		    ZIO_COMPRESS_LZ4);
-	} else {
-		/* compression failed */
-		bcopy(lb, tmpbuf, sizeof (*lb));
-		L2BLK_SET_COMPRESS(
-		    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
-		    ZIO_COMPRESS_OFF);
-	}
+	/* compression failed */
+	bcopy(lb, tmpbuf, sizeof (*lb));
+	L2BLK_SET_COMPRESS(
+	    (&l2dhdr->dh_start_lbps[0])->lbp_prop,
+	    ZIO_COMPRESS_OFF);
 
 	/* checksum what we're about to write */
 	fletcher_4_native(tmpbuf, asize, NULL,
