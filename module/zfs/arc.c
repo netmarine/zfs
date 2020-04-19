@@ -530,7 +530,8 @@ arc_stats_t arc_stats = {
 	{ "l2_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_hdr_size",		KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_writes",		KSTAT_DATA_UINT64 },
-	{ "l2_log_blk_avg_size",	KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_avg_asize",	KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_data_to_meta_ratio",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_success",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
@@ -539,9 +540,9 @@ arc_stats_t arc_stats = {
 	{ "l2_rebuild_cksum_lb_errors",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_lowmem",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_size",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_bufs",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_bufs_precached",	KSTAT_DATA_UINT64 },
-	{ "l2_rebuild_psize",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_log_blks",	KSTAT_DATA_UINT64 },
 	{ "memory_throttle_count",	KSTAT_DATA_UINT64 },
 	{ "memory_direct_count",	KSTAT_DATA_UINT64 },
@@ -895,7 +896,7 @@ static void l2arc_log_blk_fetch_abort(zio_t *zio);
 
 /* L2ARC persistence block restoration routines. */
 static void l2arc_log_blk_restore(l2arc_dev_t *dev,
-    const l2arc_log_blk_phys_t *lb, uint64_t lb_psize, uint64_t lb_daddr);
+    const l2arc_log_blk_phys_t *lb, uint64_t lb_asize, uint64_t lb_daddr);
 static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
     l2arc_dev_t *dev);
 
@@ -7975,8 +7976,15 @@ top:
 		zio_buf_free(abd_buf, sizeof (*abd_buf));
 		if (zio->io_error != 0) {
 			lb_ptr_buf = list_remove_head(&dev->l2ad_lbptr_list);
-			bytes_dropped +=
+			/*
+			 * L2BLK_GET_PSIZE returns aligned size for log
+			 * blocks.
+			 */
+			uint64_t asize =
 			    L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
+			bytes_dropped += asize;
+			ARCSTAT_INCR(arcstat_l2_log_blk_asize, -asize);
+			dev->l2ad_lb_asize -= asize;
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
 			kmem_free(lb_ptr_buf, sizeof (l2arc_lb_ptr_buf_t));
@@ -8373,17 +8381,42 @@ retry:
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
 
+		/* L2BLK_GET_PSIZE returns aligned size for log blocks */
+		uint64_t asize = L2BLK_GET_PSIZE(
+		    (lb_ptr_buf->lb_ptr)->lbp_prop);
+		uint64_t start = L2BLK_GET_PSIZE(
+		    (lb_ptr_buf->lb_ptr)->lbp_payload_start);
+
 		/*
-		 * We don't worry about log blocks left behind (ie
-		 * lbp_daddr + psize < l2ad_hand) because l2arc_write_buffers()
-		 * will never write more than l2arc_evict() evicts.
+		 * We make sure the tail(*) of the list of log block pointers
+		 * does not point to a log block before the write hand. We check
+		 * that the evict hand lies between the write hand and the start
+		 * of the payload for the log block pointed by the tail of the
+		 * list of log block pointers. The only case where this should
+		 * happen is when l2ad_first is true. If we reach here
+		 * l2ad_first is false.
+		 *
+		 *		l2ad_hand          l2ad_evict
+		 *		|			 |	lbp_daddr
+		 *		|			 |start	|
+		 *		|			 | |	|
+		 *		V			 V V	V
+		 *   l2ad_start ======================================= l2ad_end
+		 *					   --------||||
+		 *						^   ^
+		 *						|   log block
+		 *						|    (*tail)
+		 *						payload
+		 *
 		 */
-		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
+		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr) &&
+		    l2arc_range_check_overlap(dev->l2ad_hand, start,
+		    dev->l2ad_evict)) {
 			break;
 		} else {
-			vdev_space_update(dev->l2ad_vdev,
-			    -L2BLK_GET_PSIZE(
-			    (lb_ptr_buf->lb_ptr)->lbp_prop), 0, 0);
+			vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
+			ARCSTAT_INCR(arcstat_l2_log_blk_asize, -asize);
+			dev->l2ad_lb_asize -= asize;
 			list_remove(&dev->l2ad_lbptr_list, lb_ptr_buf);
 			kmem_free(lb_ptr_buf->lb_ptr,
 			    sizeof (l2arc_log_blkptr_t));
@@ -9059,7 +9092,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	uint64_t		l2dhdr_asize;
 	spa_t			*spa;
 	int			err;
-	boolean_t		rebuild = B_TRUE;
+	boolean_t		l2dhdr_valid = B_TRUE;
 
 	dev = l2arc_vdev_get(vd);
 	ASSERT3P(dev, !=, NULL);
@@ -9089,9 +9122,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 	 * Read the device header, if an error is returned do not rebuild L2ARC.
 	 */
 	if ((err = l2arc_dev_hdr_read(dev)) != 0)
-		rebuild = B_FALSE;
+		l2dhdr_valid = B_FALSE;
 
-	if (rebuild && l2dhdr->dh_log_blk_ent > 0) {
+	if (l2dhdr_valid && l2dhdr->dh_log_blk_ent > 0) {
 		/*
 		 * If we are onlining a cache device (vdev_reopen) that was
 		 * still present (l2arc_vdev_present()) and rebuild is enabled,
@@ -9117,12 +9150,10 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 * async task which will call l2arc_spa_rebuild_start.
 		 */
 		dev->l2ad_rebuild = B_TRUE;
-	} else if (!rebuild && spa_writeable(spa)) {
+	} else if (spa_writeable(spa)) {
 		/*
-		 * The boolean rebuild is false if reading the device header
-		 * returned an error. In this case create a new header. We
-		 * zero out the memory holding the header to reset
-		 * dh_start_lbps.
+		 * In this case create a new header. We zero out the memory
+		 * holding the header to reset dh_start_lbps.
 		 */
 		bzero(l2dhdr, l2dhdr_asize);
 		l2arc_dev_hdr_update(dev);
@@ -9332,6 +9363,7 @@ l2arc_rebuild(l2arc_dev_t *dev)
 
 	/*
 	 * Retrieve the persistent L2ARC device state.
+	 * L2BLK_GET_PSIZE returns aligned size for log blocks.
 	 */
 	dev->l2ad_evict = MAX(l2dhdr->dh_evict, dev->l2ad_start);
 	dev->l2ad_hand = MAX(l2dhdr->dh_start_lbps[0].lbp_daddr +
@@ -9381,10 +9413,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		/*
 		 * Now that we know that the next_lb checks out alright, we
 		 * can start reconstruction from this log block.
+		 * L2BLK_GET_PSIZE returns aligned size for log blocks.
 		 */
-		l2arc_log_blk_restore(dev, this_lb,
-		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop),
-		    lbps[0].lbp_daddr);
+		uint64_t asize = L2BLK_GET_PSIZE((&lbps[0])->lbp_prop);
+		l2arc_log_blk_restore(dev, this_lb, asize, lbps[0].lbp_daddr);
 		i++;
 
 		/*
@@ -9398,9 +9430,10 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		    sizeof (l2arc_log_blkptr_t));
 		mutex_enter(&dev->l2ad_mtx);
 		list_insert_tail(&dev->l2ad_lbptr_list, lb_ptr_buf);
+		ARCSTAT_INCR(arcstat_l2_log_blk_asize, asize);
+		dev->l2ad_lb_asize += asize;
 		mutex_exit(&dev->l2ad_mtx);
-		vdev_space_update(vd,
-		    L2BLK_GET_PSIZE((&lbps[0])->lbp_prop), 0, 0);
+		vdev_space_update(vd, asize, 0, 0);
 
 		/*
 		 * Protection against loops of log blocks:
@@ -9578,7 +9611,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	int		err = 0;
 	zio_cksum_t	cksum;
 	abd_t		*abd = NULL;
-	uint64_t	psize;
+	uint64_t	asize;
 
 	ASSERT(this_lbp != NULL && next_lbp != NULL);
 	ASSERT(this_lb != NULL && next_lb != NULL);
@@ -9616,9 +9649,12 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 		goto cleanup;
 	}
 
-	/* Make sure the buffer checks out */
-	psize = L2BLK_GET_PSIZE((this_lbp)->lbp_prop);
-	fletcher_4_native(this_lb, psize, NULL, &cksum);
+	/*
+	 * Make sure the buffer checks out.
+	 * L2BLK_GET_PSIZE returns aligned size for log blocks.
+	 */
+	asize = L2BLK_GET_PSIZE((this_lbp)->lbp_prop);
+	fletcher_4_native(this_lb, asize, NULL, &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_lb_errors);
 		zfs_dbgmsg("L2ARC log block cksum failed, offset: %llu, "
@@ -9634,11 +9670,11 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	case ZIO_COMPRESS_OFF:
 		break;
 	case ZIO_COMPRESS_LZ4:
-		abd = abd_alloc_for_io(psize, B_TRUE);
-		abd_copy_from_buf_off(abd, this_lb, 0, psize);
+		abd = abd_alloc_for_io(asize, B_TRUE);
+		abd_copy_from_buf_off(abd, this_lb, 0, asize);
 		if ((err = zio_decompress_data(
 		    L2BLK_GET_COMPRESS((this_lbp)->lbp_prop),
-		    abd, this_lb, psize, sizeof (*this_lb))) != 0) {
+		    abd, this_lb, asize, sizeof (*this_lb))) != 0) {
 			err = SET_ERROR(EINVAL);
 			goto cleanup;
 		}
@@ -9672,9 +9708,9 @@ cleanup:
  */
 static void
 l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
-    uint64_t lb_psize, uint64_t lb_daddr)
+    uint64_t lb_asize, uint64_t lb_daddr)
 {
-	uint64_t	size = 0, psize = 0;
+	uint64_t	size = 0, asize = 0;
 	uint64_t	log_entries = dev->l2ad_dev_hdr->dh_log_blk_ent;
 
 	for (int i = log_entries - 1; i >= 0; i--) {
@@ -9692,27 +9728,28 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 		 *		^				^
 		 *		|				|
 		 *		|				|
-		 *	l2arc_fill_thread		l2arc_rebuild
-		 *	places new bufs here		restores bufs here
+		 *	l2arc_feed_thread		l2arc_rebuild
+		 *	will place new bufs here	restores bufs here
 		 *
-		 * This also works when the restored bufs get evicted at any
-		 * point during the rebuild.
+		 * During l2arc_rebuild() the device is not used by
+		 * l2arc_feed_thread() as dev->l2ad_rebuild is set to true.
 		 */
 		size += L2BLK_GET_LSIZE((&lb->lb_entries[i])->le_prop);
-		psize += L2BLK_GET_PSIZE((&lb->lb_entries[i])->le_prop);
+		asize += vdev_psize_to_asize(dev->l2ad_vdev,
+		    L2BLK_GET_PSIZE((&lb->lb_entries[i])->le_prop));
 		l2arc_hdr_restore(&lb->lb_entries[i], dev);
 	}
 
 	/*
 	 * Record rebuild stats:
 	 *	size		Logical size of restored buffers in the L2ARC
-	 *	psize		Physical size of restored buffers in the L2ARC
+	 *	asize		Aligned size of restored buffers in the L2ARC
 	 */
 	ARCSTAT_INCR(arcstat_l2_rebuild_size, size);
-	ARCSTAT_INCR(arcstat_l2_rebuild_psize, psize);
+	ARCSTAT_INCR(arcstat_l2_rebuild_asize, asize);
 	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, log_entries);
-	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, lb_psize);
-	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, psize / lb_psize);
+	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_asize, lb_asize);
+	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, asize / lb_asize);
 	ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
 }
 
@@ -9800,18 +9837,18 @@ static zio_t *
 l2arc_log_blk_fetch(vdev_t *vd, const l2arc_log_blkptr_t *lbp,
     l2arc_log_blk_phys_t *lb)
 {
-	uint32_t		psize;
+	uint32_t		asize;
 	zio_t			*pio;
 	l2arc_read_callback_t	*cb;
 
-	psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
-	ASSERT(psize <= sizeof (l2arc_log_blk_phys_t));
+	asize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
+	ASSERT(asize <= sizeof (l2arc_log_blk_phys_t));
 	cb = kmem_zalloc(sizeof (l2arc_read_callback_t), KM_SLEEP);
-	cb->l2rcb_abd = abd_get_from_buf(lb, psize);
+	cb->l2rcb_abd = abd_get_from_buf(lb, asize);
 	pio = zio_root(vd->vdev_spa, l2arc_blk_fetch_done, cb,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
 	    ZIO_FLAG_DONT_RETRY);
-	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, psize,
+	(void) zio_nowait(zio_read_phys(pio, vd, lbp->lbp_daddr, asize,
 	    cb->l2rcb_abd, ZIO_CHECKSUM_OFF, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE));
@@ -9841,6 +9878,8 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	abd_t			*abd;
 	int			err;
 
+	VERIFY(spa_config_held(dev->l2ad_spa, SCL_STATE_ALL, RW_READER));
+
 	l2dhdr->dh_magic = L2ARC_DEV_HDR_MAGIC;
 	l2dhdr->dh_version = L2ARC_PERSISTENT_VERSION;
 	l2dhdr->dh_spa_guid = spa_guid(dev->l2ad_vdev->vdev_spa);
@@ -9849,6 +9888,7 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_evict = dev->l2ad_evict;
 	l2dhdr->dh_start = dev->l2ad_start;
 	l2dhdr->dh_end = dev->l2ad_end;
+	l2dhdr->dh_lb_asize = dev->l2ad_lb_asize;
 	l2dhdr->dh_flags = 0;
 	if (dev->l2ad_first)
 		l2dhdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
@@ -9954,13 +9994,15 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	    sizeof (l2arc_log_blkptr_t));
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_head(&dev->l2ad_lbptr_list, lb_ptr_buf);
+	ARCSTAT_INCR(arcstat_l2_log_blk_asize, asize);
+	dev->l2ad_lb_asize += asize;
 	mutex_exit(&dev->l2ad_mtx);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	/* bump the kstats */
 	ARCSTAT_INCR(arcstat_l2_write_bytes, asize);
 	ARCSTAT_BUMP(arcstat_l2_log_blk_writes);
-	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_size, asize);
+	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_asize, asize);
 	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio,
 	    dev->l2ad_log_blk_payload_asize / asize);
 
@@ -9977,8 +10019,8 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 boolean_t
 l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 {
-	uint64_t psize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
-	uint64_t end = lbp->lbp_daddr + psize - 1;
+	uint64_t asize = L2BLK_GET_PSIZE((lbp)->lbp_prop);
+	uint64_t end = lbp->lbp_daddr + asize - 1;
 	uint64_t start = lbp->lbp_payload_start;
 	boolean_t evicted = B_FALSE;
 
@@ -10009,7 +10051,7 @@ l2arc_log_blkptr_valid(l2arc_dev_t *dev, const l2arc_log_blkptr_t *lbp)
 	    l2arc_range_check_overlap(dev->l2ad_hand, dev->l2ad_evict, end);
 
 	return (start >= dev->l2ad_start && end <= dev->l2ad_end &&
-	    psize > 0 && psize <= sizeof (l2arc_log_blk_phys_t) &&
+	    asize > 0 && asize <= sizeof (l2arc_log_blk_phys_t) &&
 	    (!evicted || dev->l2ad_first));
 }
 
