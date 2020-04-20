@@ -8384,34 +8384,13 @@ retry:
 		/* L2BLK_GET_PSIZE returns aligned size for log blocks */
 		uint64_t asize = L2BLK_GET_PSIZE(
 		    (lb_ptr_buf->lb_ptr)->lbp_prop);
-		uint64_t start = L2BLK_GET_PSIZE(
-		    (lb_ptr_buf->lb_ptr)->lbp_payload_start);
 
 		/*
-		 * We make sure the tail(*) of the list of log block pointers
-		 * does not point to a log block before the write hand. We check
-		 * that the evict hand lies between the write hand and the start
-		 * of the payload for the log block pointed by the tail of the
-		 * list of log block pointers. The only case where this should
-		 * happen is when l2ad_first is true. If we reach here
-		 * l2ad_first is false.
-		 *
-		 *		l2ad_hand          l2ad_evict
-		 *		|			 |	lbp_daddr
-		 *		|			 |start	|
-		 *		|			 | |	|
-		 *		V			 V V	V
-		 *   l2ad_start ======================================= l2ad_end
-		 *					   --------||||
-		 *						^   ^
-		 *						|   log block
-		 *						|    (*tail)
-		 *						payload
-		 *
+		 * We don't worry about log blocks left behind (ie
+		 * lbp_daddr + psize < l2ad_hand) because l2arc_write_buffers()
+		 * will never write more than l2arc_evict() evicts.
 		 */
-		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr) &&
-		    l2arc_range_check_overlap(dev->l2ad_hand, start,
-		    dev->l2ad_evict)) {
+		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
 			break;
 		} else {
 			vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
