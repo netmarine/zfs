@@ -8387,7 +8387,7 @@ retry:
 
 		/*
 		 * We don't worry about log blocks left behind (ie
-		 * lbp_daddr + psize < l2ad_hand) because l2arc_write_buffers()
+		 * lbp_payload_start < l2ad_hand) because l2arc_write_buffers()
 		 * will never write more than l2arc_evict() evicts.
 		 */
 		if (!all && l2arc_log_blkptr_valid(dev, lb_ptr_buf->lb_ptr)) {
@@ -9434,8 +9434,8 @@ l2arc_rebuild(l2arc_dev_t *dev)
 		 * (lbps[0].lbp_daddr). If true and this isn't the first pass,
 		 * we are looping from the beginning and we should stop.
 		 */
-		if (l2arc_range_check_overlap(lbps[1].lbp_daddr,
-		    lbps[0].lbp_daddr, dev->l2ad_evict) && !dev->l2ad_first)
+		if (l2arc_range_check_overlap(lbps[1].lbp_payload_start,
+		    lbps[0].lbp_payload_start, dev->l2ad_evict) && !dev->l2ad_first)
 			goto out;
 
 		for (;;) {
