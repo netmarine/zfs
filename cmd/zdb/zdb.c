@@ -3704,7 +3704,7 @@ dump_l2arc_header(int fd)
 	}
 
 	lb_asize = dump_l2arc_log_blocks(fd, l2dhdr);
-	if (lb_asize != l2dhdr.dh_lb_asize)
+	if (lb_asize < l2dhdr.dh_lb_asize)
 		return (1);
 
 	return (0);
