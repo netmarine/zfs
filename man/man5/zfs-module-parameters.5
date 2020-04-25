@@ -207,11 +207,11 @@ Default value: \fB200\fR%.
 .ad
 .RS 12n
 Trims ahead of the current evict hand on L2ARC devices by this percentage of
-write size. It has a minimum value of 64MB. If set to \fB100\fR we TRIM only
-the space required to accomodate upcoming writes. It also enables TRIM of the
-whole L2ARC device upon creation or addition to an existing pool or if the
-header of the device is invalid. A value of
-\fB0\fR disables TRIM on L2ARC.
+write size. It has a minimum value of 64MB. If set to \fB100\fR we TRIM ahead
+twice the space required to accomodate upcoming writes. It also enables TRIM of
+the whole L2ARC device upon creation or addition to an existing pool or if the
+header of the device is invalid. A value of \fB0\fR disables TRIM on L2ARC
+altogether.
 .sp
 Default value: \fB0\fR%.
 .RE
