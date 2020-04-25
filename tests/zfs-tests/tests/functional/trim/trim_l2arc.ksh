@@ -23,12 +23,15 @@
 # 	Verify trimming of L2ARC
 #
 # STRATEGY:
-#	1. Create a pool on file vdevs to trim.
-#	2. Set 'l2arc_trim_ahead = 200' on pool.
-#	3. Fill the pool with a file larger than the L2ARC vdev.
-#	4. Randomly read the previous written file long enough for the
-#		L2ARC vdev to be filled and overwritten.
-#	5. Verify trim IOs of the expected type were issued for the pool.
+#	1. Set 'l2arc_trim_ahead = 1' and `l2arc_write_size = 64MB`.
+#	2. Create a pool on file vdevs to trim.
+#	3. Verify the cache device was trimmed.
+#	4. Fill the pool with a file larger than the L2ARC vdev.
+#	5. Randomly read the previous written file long enough for the
+#		L2ARC vdev to be filled and overwritten 5 times.
+#	6. Verify trim IOs of the expected type were issued for the pool.
+#	7. Verify the allocated space on the cache device is less than
+#		its size.
 #
 
 verify_runnable "global"
@@ -43,6 +46,7 @@ function cleanup
 
 	log_must rm -f $VDEVS
 	log_must set_tunable32 L2ARC_TRIM_AHEAD $l2arc_trimahead
+	log_must set_tunable32 L2ARC_WRITE_MAX $l2arc_writemax
 }
 log_onexit cleanup
 
@@ -50,7 +54,9 @@ log_onexit cleanup
 # dev->l2ad_hand loops around and dev->l2ad_first=0. Otherwise 
 # l2arc_evict() exits before evicting/trimming.
 typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
-log_must set_tunable32 L2ARC_TRIM_AHEAD 200
+typeset l2arc_writemax=$(get_tunable L2ARC_WRITE_MAX)
+log_must set_tunable32 L2ARC_TRIM_AHEAD 1
+log_must set_tunable32 L2ARC_WRITE_MAX $(( 64 * 1024 * 1024))
 VDEVS="$TRIM_VDEV1 $TRIM_VDEV2"
 log_must truncate -s $((MINVDEVSIZE)) $TRIM_VDEV2
 log_must truncate -s $((4 * MINVDEVSIZE)) $TRIM_VDEV1
@@ -75,8 +81,10 @@ export DIRECT=1
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 
 # Read randomly from the pool to fill L2ARC.
-export RUNTIME=1
+export RUNTIME=30
+log_must fio $FIO_SCRIPTS/random_reads.fio
 
+export RUNTIME=1
 typeset do_once=true
 while $do_once || [[ $l2_size1 -le $l2_size2 ]]; do
 	typeset l2_size1=$(get_arcstat l2_size)
@@ -86,6 +94,11 @@ while $do_once || [[ $l2_size1 -le $l2_size2 ]]; do
 done
 
 verify_trim_io $TESTPOOL "ind" 5 $TRIM_VDEV2
+
+typeset cache_size=$(zpool list -vp | grep $TRIM_VDEV2 | awk '{print $2}')
+typeset cache_alloc=$(zpool list -vp | grep $TRIM_VDEV2 | awk '{print $3}')
+
+log_must test $cache_alloc -lt $cache_size
 
 log_must zpool destroy $TESTPOOL
 log_must rm -f $VDEVS
