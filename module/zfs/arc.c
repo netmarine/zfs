@@ -855,7 +855,6 @@ static void arc_hdr_alloc_abd(arc_buf_hdr_t *, boolean_t);
 static void arc_access(arc_buf_hdr_t *, kmutex_t *);
 static boolean_t arc_is_overflowing(void);
 static void arc_buf_watch(arc_buf_t *);
-static l2arc_dev_t *l2arc_vdev_get(vdev_t *vd);
 
 static arc_buf_contents_t arc_buf_type(arc_buf_hdr_t *);
 static uint32_t arc_bufc_to_flags(arc_buf_contents_t);
@@ -913,7 +912,6 @@ static void l2arc_hdr_restore(const l2arc_log_ent_phys_t *le,
     l2arc_dev_t *dev);
 
 /* L2ARC persistence write I/O routines. */
-static void l2arc_dev_hdr_update(l2arc_dev_t *dev);
 static void l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
     l2arc_write_callback_t *cb);
 
@@ -9072,7 +9070,7 @@ l2arc_vdev_present(vdev_t *vd)
  * Returns the l2arc_dev_t associated with a particular vdev_t or NULL if
  * the vdev_t isn't an L2ARC device.
  */
-static l2arc_dev_t *
+l2arc_dev_t *
 l2arc_vdev_get(vdev_t *vd)
 {
 	l2arc_dev_t	*dev;
@@ -9488,6 +9486,9 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	    L2BLK_GET_PSIZE((&l2dhdr->dh_start_lbps[0])->lbp_prop),
 	    dev->l2ad_start);
 	dev->l2ad_first = !!(l2dhdr->dh_flags & L2ARC_DEV_HDR_EVICT_FIRST);
+
+	vd->vdev_trim_action_time = l2dhdr->dh_trim_action_time;
+	vd->vdev_trim_state = l2dhdr->dh_trim_state;
 
 	/*
 	 * In case the zfs module parameter l2arc_rebuild_enabled is false
@@ -10007,7 +10008,7 @@ l2arc_log_blk_fetch_abort(zio_t *zio)
  * Creates a zio to update the device header on an l2arc device. The zio is
  * initiated as a child of `pio'.
  */
-static void
+void
 l2arc_dev_hdr_update(l2arc_dev_t *dev)
 {
 	l2arc_dev_hdr_phys_t	*l2dhdr = dev->l2ad_dev_hdr;
@@ -10028,6 +10029,8 @@ l2arc_dev_hdr_update(l2arc_dev_t *dev)
 	l2dhdr->dh_lb_asize = zfs_refcount_count(&dev->l2ad_lb_asize);
 	l2dhdr->dh_lb_count = zfs_refcount_count(&dev->l2ad_lb_count);
 	l2dhdr->dh_flags = 0;
+	l2dhdr->dh_trim_action_time = dev->l2ad_vdev->vdev_trim_action_time;
+	l2dhdr->dh_trim_state = dev->l2ad_vdev->vdev_trim_state;
 	if (dev->l2ad_first)
 		l2dhdr->dh_flags |= L2ARC_DEV_HDR_EVICT_FIRST;
 

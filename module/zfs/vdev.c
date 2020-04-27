@@ -3550,7 +3550,7 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 
 	/* Restart trimming if necessary */
 	mutex_enter(&vd->vdev_trim_lock);
-	if (vdev_writeable(vd) &&
+	if (vdev_writeable(vd) && !vd->vdev_isl2cache &&
 	    vd->vdev_trim_thread == NULL &&
 	    vd->vdev_trim_state == VDEV_TRIM_ACTIVE) {
 		(void) vdev_trim(vd, vd->vdev_trim_rate, vd->vdev_trim_partial,

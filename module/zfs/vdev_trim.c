@@ -34,6 +34,7 @@
 #include <sys/dsl_synctask.h>
 #include <sys/zap.h>
 #include <sys/dmu_tx.h>
+#include <sys/arc_impl.h>
 
 /*
  * TRIM is a feature which is used to notify a SSD that some previously
@@ -1578,6 +1579,13 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		vd->vdev_trim_thread = NULL;
 		cv_broadcast(&vd->vdev_trim_cv);
 		mutex_exit(&vd->vdev_trim_lock);
+
+		if (vd->vdev_isl2cache) {
+			spa_config_enter(vd->vdev_spa, SCL_L2ARC, vd,
+			    RW_READER);
+			l2arc_dev_hdr_update(l2arc_vdev_get(vd));
+			spa_config_exit(vd->vdev_spa, SCL_L2ARC, vd);
+		}
 	}
 
 	return (error);
