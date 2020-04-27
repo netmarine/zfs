@@ -425,7 +425,7 @@ vdev_autotrim_cb(zio_t *zio)
 /*
  * The zio_done_func_t done callback for each L2ARC TRIM issued.  It
  * is responsible for updating the TRIM stats and limiting the number of
- * in flight TRIM I/Os.  Automatic TRIM I/Os are best effort and are
+ * in flight TRIM I/Os.  L2ARC TRIM I/Os are best effort and are
  * never reissued on failure.
  */
 static void

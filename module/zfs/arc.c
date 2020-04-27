@@ -9369,7 +9369,7 @@ l2arc_spa_trim(spa_t *spa)
 		l2arc_dev_t *dev =
 		    l2arc_vdev_get(spa->spa_l2cache.sav_vdevs[i]);
 		if (dev == NULL) {
-			/* Don't attempt a rebuild if the vdev is UNAVAIL */
+			/* Don't attempt TRIM if the vdev is UNAVAIL */
 			continue;
 		}
 
