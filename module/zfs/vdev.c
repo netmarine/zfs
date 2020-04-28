@@ -2291,14 +2291,6 @@ vdev_reopen(vdev_t *vd)
 				l2arc_add_vdev(spa, vd);
 			}
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
-
-			/*
-			 * Upon cache device reopening we might restore its
-			 * contents to L2ARC. If the header of the device is
-			 * invalid we issue an async TRIM command for the
-			 * whole device which will execute if
-			 * l2arc_trim_ahead > 0.
-			 */
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_TRIM);
 		}
 	} else {

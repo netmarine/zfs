@@ -1032,10 +1032,6 @@ static void
 vdev_trim_stop_all_impl(vdev_t *vd, vdev_trim_state_t tgt_state,
     list_t *vd_list)
 {
-	uint64_t i;
-	vdev_t	*vd_l2cache;
-	spa_t	*spa = vd->vdev_spa;
-
 	if (vd->vdev_ops->vdev_op_leaf && vdev_is_concrete(vd)) {
 		mutex_enter(&vd->vdev_trim_lock);
 		vdev_trim_stop(vd, tgt_state, vd_list);
@@ -1043,19 +1039,9 @@ vdev_trim_stop_all_impl(vdev_t *vd, vdev_trim_state_t tgt_state,
 		return;
 	}
 
-	for (i = 0; i < vd->vdev_children; i++) {
+	for (uint64_t i = 0; i < vd->vdev_children; i++) {
 		vdev_trim_stop_all_impl(vd->vdev_child[i], tgt_state,
 		    vd_list);
-	}
-
-	/*
-	 * Iterate over cache devices and request stop trimming the
-	 * whole device in case we export the pool or remove the cache
-	 * device prematurely.
-	 */
-	for (i = 0; i < spa->spa_l2cache.sav_count; i++) {
-		vd_l2cache = spa->spa_l2cache.sav_vdevs[i];
-		vdev_trim_stop_all_impl(vd_l2cache, tgt_state, vd_list);
 	}
 }
 
@@ -1068,6 +1054,7 @@ vdev_trim_stop_all(vdev_t *vd, vdev_trim_state_t tgt_state)
 {
 	spa_t *spa = vd->vdev_spa;
 	list_t vd_list;
+	vdev_t *vd_l2cache;
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
@@ -1075,6 +1062,17 @@ vdev_trim_stop_all(vdev_t *vd, vdev_trim_state_t tgt_state)
 	    offsetof(vdev_t, vdev_trim_node));
 
 	vdev_trim_stop_all_impl(vd, tgt_state, &vd_list);
+
+	/*
+	 * Iterate over cache devices and request stop trimming the
+	 * whole device in case we export the pool or remove the cache
+	 * device prematurely.
+	 */
+	for (int i = 0; i < spa->spa_l2cache.sav_count; i++) {
+		vd_l2cache = spa->spa_l2cache.sav_vdevs[i];
+		vdev_trim_stop_all_impl(vd_l2cache, tgt_state, &vd_list);
+	}
+
 	vdev_trim_stop_wait(spa, &vd_list);
 
 	if (vd->vdev_spa->spa_sync_on) {
@@ -1507,6 +1505,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 	ASSERT(!vd->vdev_detached);
 	ASSERT(!vd->vdev_top->vdev_removing);
 
+	bzero(&ta, sizeof (ta));
 	ta.trim_vdev = vd;
 	ta.trim_tree = range_tree_create(NULL, RANGE_SEG64, NULL, 0, 0);
 	ta.trim_type = type;
@@ -1524,10 +1523,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 	}
 
 	if (type == TRIM_TYPE_MANUAL) {
-		vd->vdev_trim_last_offset = 0;
-		vd->vdev_trim_rate = 0;
-		vd->vdev_trim_partial = 0;
-		vd->vdev_trim_secure = 0;
+		vd->vdev_trim_bytes_done = 0;
 		vd->vdev_trim_bytes_est = size;
 
 		/*
@@ -1576,16 +1572,21 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
 		mutex_enter(&vd->vdev_trim_lock);
 
-		vd->vdev_trim_thread = NULL;
-		cv_broadcast(&vd->vdev_trim_cv);
-		mutex_exit(&vd->vdev_trim_lock);
-
+		/*
+		 * Update the header of the cache device here, before
+		 * broadcasting vdev_trim_cv which may lead to the removal
+		 * of the device.
+		 */
 		if (vd->vdev_isl2cache) {
 			spa_config_enter(vd->vdev_spa, SCL_L2ARC, vd,
 			    RW_READER);
 			l2arc_dev_hdr_update(l2arc_vdev_get(vd));
 			spa_config_exit(vd->vdev_spa, SCL_L2ARC, vd);
 		}
+
+		vd->vdev_trim_thread = NULL;
+		cv_broadcast(&vd->vdev_trim_cv);
+		mutex_exit(&vd->vdev_trim_lock);
 	}
 
 	return (error);

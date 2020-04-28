@@ -9220,14 +9220,21 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		dev->l2ad_rebuild = B_TRUE;
 	} else if (spa_writeable(spa)) {
 		/*
-		 * In this case TRIM the whole device if l2arc_trim_ahead > 0
-		 * and create a new header. We zero out the memory holding the
-		 * header to reset dh_start_lbps.
+		 * In this case TRIM the whole device if l2arc_trim_ahead > 0,
+		 * otherwise create a new header. We zero out the memory holding
+		 * the header to reset dh_start_lbps. If we TRIM the whole
+		 * device the new header will be written by vdev_trim_simple()
+		 * at the end of the TRIM to update the trim_state in the
+		 * header too. When reading the header, if trim_state is not
+		 * VDEV_TRIM_COMPLETE and l2arc_trim_ahead > 0 we opt to TRIM
+		 * the whole device again.
 		 */
-		if (l2arc_trim_ahead > 0)
+		if (l2arc_trim_ahead > 0) {
 			dev->l2ad_trim_all = B_TRUE;
-		bzero(l2dhdr, l2dhdr_asize);
-		l2arc_dev_hdr_update(dev);
+		} else {
+			bzero(l2dhdr, l2dhdr_asize);
+			l2arc_dev_hdr_update(dev);
+		}
 	}
 }
 
@@ -9383,9 +9390,9 @@ static void
 l2arc_dev_trim(l2arc_dev_t *dev)
 {
 	VERIFY(dev->l2ad_trim_all);
+
 	vdev_trim_simple(dev->l2ad_vdev,
-	    dev->l2ad_evict - VDEV_LABEL_START_SIZE,
-	    dev->l2ad_end - dev->l2ad_evict,
+	    0, dev->l2ad_end - VDEV_LABEL_START_SIZE,
 	    TRIM_TYPE_MANUAL);
 	dev->l2ad_trim_all = B_FALSE;
 
@@ -9699,7 +9706,9 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    l2dhdr->dh_log_entries != dev->l2ad_log_entries ||
 	    l2dhdr->dh_end != dev->l2ad_end ||
 	    !l2arc_range_check_overlap(dev->l2ad_start, dev->l2ad_end,
-	    l2dhdr->dh_evict)) {
+	    l2dhdr->dh_evict) ||
+	    (l2dhdr->dh_trim_state != VDEV_TRIM_COMPLETE &&
+	    l2arc_trim_ahead > 0)) {
 		/*
 		 * Attempt to rebuild a device containing no actual dev hdr
 		 * or containing a header from some other pool or from another
