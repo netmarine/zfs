@@ -3540,7 +3540,12 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 	}
 	mutex_exit(&vd->vdev_initialize_lock);
 
-	/* Restart trimming if necessary */
+	/*
+	 * Restart trimming if necessary. We do not restart trimming for cache
+	 * devices here. This is triggered by l2arc_rebuild_vdev()
+	 * asynchronously for the whole device or in l2arc_evict() as it evicts
+	 * space for upcoming writes.
+	 */
 	mutex_enter(&vd->vdev_trim_lock);
 	if (vdev_writeable(vd) && !vd->vdev_isl2cache &&
 	    vd->vdev_trim_thread == NULL &&
