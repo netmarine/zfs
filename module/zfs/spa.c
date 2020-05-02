@@ -7297,7 +7297,8 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 		vdev_t *vd = rvd->vdev_child[c];
 
 		/* don't count the holes & logs as children */
-		if (vd->vdev_islog || !vdev_is_concrete(vd)) {
+		if (vd->vdev_islog || (vd->vdev_ops != &vdev_indirect_ops &&
+		    !vdev_is_concrete(vd))) {
 			if (lastlog == 0)
 				lastlog = c;
 			continue;
@@ -7331,6 +7332,51 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 				error = SET_ERROR(EINVAL);
 				break;
 			}
+		}
+
+		/* deal with indirect vdevs */
+		if (spa->spa_root_vdev->vdev_child[c]->vdev_ops ==
+		    &vdev_indirect_ops) {
+			vml[c] = spa->spa_root_vdev->vdev_child[c];
+			vdev_indirect_config_t *vic =
+			    &vml[c]->vdev_indirect_config;
+
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_INDIRECT_OBJECT,
+			    vic->vic_mapping_object));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_INDIRECT_BIRTHS,
+			    vic->vic_births_object));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_PREV_INDIRECT_VDEV,
+			    vic->vic_prev_indirect_vdev));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_INDIRECT_SIZE,
+			    vdev_indirect_mapping_size(
+			    vml[c]->vdev_indirect_mapping)));
+			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_GUID,
+			    vml[c]->vdev_guid));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_METASLAB_ARRAY,
+			    vml[c]->vdev_top->vdev_ms_array));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_METASLAB_SHIFT,
+			    vml[c]->vdev_top->vdev_ms_shift));
+			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_ASIZE,
+			    vml[c]->vdev_top->vdev_asize));
+			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_ASHIFT,
+			    vml[c]->vdev_top->vdev_ashift));
+			ASSERT3U(vml[c]->vdev_top->vdev_top_zap, !=, 0);
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_VDEV_TOP_ZAP,
+			    vml[c]->vdev_parent->vdev_top_zap));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_WHOLE_DISK,
+			    vml[c]->vdev_wholedisk));
+			VERIFY0(nvlist_add_uint64(child[c],
+			    ZPOOL_CONFIG_CREATE_TXG,
+			    vml[c]->vdev_crtxg));
+			continue;
 		}
 
 		/* which disk is going to be split? */
@@ -7460,7 +7506,7 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 	    offsetof(vdev_t, vdev_trim_node));
 
 	for (c = 0; c < children; c++) {
-		if (vml[c] != NULL) {
+		if (vml[c] != NULL && vml[c]->vdev_ops != &vdev_indirect_ops) {
 			mutex_enter(&vml[c]->vdev_initialize_lock);
 			vdev_initialize_stop(vml[c],
 			    VDEV_INITIALIZE_ACTIVE, &vd_initialize_list);
@@ -7521,7 +7567,7 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 	if (error != 0)
 		dmu_tx_abort(tx);
 	for (c = 0; c < children; c++) {
-		if (vml[c] != NULL) {
+		if (vml[c] != NULL && vml[c]->vdev_ops != &vdev_indirect_ops) {
 			vdev_t *tvd = vml[c]->vdev_top;
 
 			/*
