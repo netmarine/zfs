@@ -3454,13 +3454,10 @@ zpool_vdev_split(zpool_handle_t *zhp, char *newname, nvlist_t **newroot,
 		    == 0);
 
 		if (strcmp(type, VDEV_TYPE_INDIRECT) == 0) {
-			if (nvlist_alloc(&vdev, NV_UNIQUE_NAME, 0) != 0)
-				goto out;
-			if (nvlist_add_string(vdev, ZPOOL_CONFIG_TYPE,
-			    VDEV_TYPE_INDIRECT) != 0)
-				goto out;
-			varray[vcount++] = vdev;
-			continue;
+		       vdev = child[c];
+		       if (nvlist_dup(vdev, &varray[vcount++], 0) != 0)
+			       goto out;
+		       continue;
 		} else if (strcmp(type, VDEV_TYPE_MIRROR) != 0) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "Source pool must be composed only of mirrors\n"));

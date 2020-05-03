@@ -7336,42 +7336,8 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 
 		/* deal with indirect vdevs */
 		if (spa->spa_root_vdev->vdev_child[c]->vdev_ops ==
-		    &vdev_indirect_ops) {
-			vml[c] = spa->spa_root_vdev->vdev_child[c];
-			vdev_indirect_config_t *vic =
-			    &vml[c]->vdev_indirect_config;
-
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_INDIRECT_OBJECT,
-			    vic->vic_mapping_object));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_INDIRECT_BIRTHS,
-			    vic->vic_births_object));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_PREV_INDIRECT_VDEV,
-			    vic->vic_prev_indirect_vdev));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_INDIRECT_SIZE,
-			    vdev_indirect_mapping_size(
-			    vml[c]->vdev_indirect_mapping)));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_METASLAB_ARRAY,
-			    vml[c]->vdev_top->vdev_ms_array));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_METASLAB_SHIFT,
-			    vml[c]->vdev_top->vdev_ms_shift));
-			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_ASIZE,
-			    vml[c]->vdev_top->vdev_asize));
-			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_ASHIFT,
-			    vml[c]->vdev_top->vdev_ashift));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_WHOLE_DISK,
-			    vml[c]->vdev_wholedisk));
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_CREATE_TXG,
-			    vml[c]->vdev_crtxg));
+		    &vdev_indirect_ops)
 			continue;
-		}
 
 		/* which disk is going to be split? */
 		if (nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_GUID,
