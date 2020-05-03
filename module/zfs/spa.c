@@ -7354,8 +7354,6 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 			    ZPOOL_CONFIG_INDIRECT_SIZE,
 			    vdev_indirect_mapping_size(
 			    vml[c]->vdev_indirect_mapping)));
-			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_GUID,
-			    vml[c]->vdev_guid));
 			VERIFY0(nvlist_add_uint64(child[c],
 			    ZPOOL_CONFIG_METASLAB_ARRAY,
 			    vml[c]->vdev_top->vdev_ms_array));
@@ -7366,10 +7364,6 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 			    vml[c]->vdev_top->vdev_asize));
 			VERIFY0(nvlist_add_uint64(child[c], ZPOOL_CONFIG_ASHIFT,
 			    vml[c]->vdev_top->vdev_ashift));
-			ASSERT3U(vml[c]->vdev_top->vdev_top_zap, !=, 0);
-			VERIFY0(nvlist_add_uint64(child[c],
-			    ZPOOL_CONFIG_VDEV_TOP_ZAP,
-			    vml[c]->vdev_parent->vdev_top_zap));
 			VERIFY0(nvlist_add_uint64(child[c],
 			    ZPOOL_CONFIG_WHOLE_DISK,
 			    vml[c]->vdev_wholedisk));
