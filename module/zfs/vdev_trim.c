@@ -1578,9 +1578,11 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		 * of the device.
 		 */
 		if (vd->vdev_isl2cache) {
+			l2arc_dev_t *dev = l2arc_vdev_get(vd);
 			spa_config_enter(vd->vdev_spa, SCL_L2ARC, vd,
 			    RW_READER);
-			l2arc_dev_hdr_update(l2arc_vdev_get(vd));
+			bzero(dev->l2ad_dev_hdr, dev->l2ad_dev_hdr_asize);
+			l2arc_dev_hdr_update(dev);
 			spa_config_exit(vd->vdev_spa, SCL_L2ARC, vd);
 		}
 
