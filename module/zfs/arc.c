@@ -8353,7 +8353,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	list_t *buflist;
 	arc_buf_hdr_t *hdr, *hdr_prev;
 	kmutex_t *hash_lock;
-	uint64_t taddr, lb_ptr_daddr, psize;
+	uint64_t taddr, psize;
 	l2arc_lb_ptr_buf_t *lb_ptr_buf, *lb_ptr_buf_prev;
 	vdev_t *vd = dev->l2ad_vdev;
 	boolean_t rerun;
@@ -8450,7 +8450,6 @@ retry:
 	    lb_ptr_buf = lb_ptr_buf_prev) {
 
 		lb_ptr_buf_prev = list_prev(&dev->l2ad_lbptr_list, lb_ptr_buf);
-		lb_ptr_daddr = lb_ptr_buf->lb_ptr->lbp_daddr;
 		psize = L2BLK_GET_PSIZE((lb_ptr_buf->lb_ptr)->lbp_prop);
 
 		/* L2BLK_GET_PSIZE returns aligned size for log blocks */
