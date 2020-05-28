@@ -1558,7 +1558,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 			    vd->vdev_trim_secure);
 		}
 		ASSERT(vd->vdev_trim_thread != NULL ||
-		    vd->vdev_trim_inflight[0] == 0);
+		    vd->vdev_trim_inflight[TRIM_TYPE_MANUAL] == 0);
 
 		/*
 		 * Drop the vdev_trim_lock while we sync out the txg since it's
