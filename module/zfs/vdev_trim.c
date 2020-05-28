@@ -1487,6 +1487,28 @@ vdev_autotrim_restart(spa_t *spa)
 		vdev_autotrim(spa);
 }
 
+static void
+vdev_trim_l2arc_thread(vdev_t *vd)
+{
+	vdev_trim_simple(vd, 0, vdev_get_min_asize(vd), TRIM_TYPE_MANUAL);
+
+	thread_exit();
+}
+
+/*
+ * Punches out TRIM threads for the L2ARC devices in a spa and assigns them
+ * to vd->vdev_trim_thread variable. This facilitates the management of
+ * trimming the whole cache device using TRIM_TYPE_MANUAL upon addition
+ * to a pool or pool creation or when the header of the device is invalid.
+ */
+void
+vdev_trim_l2arc(vdev_t *vd)
+{
+	vd->vdev_trim_thread = thread_create(NULL,
+	    0, (void (*)(void *))vdev_trim_l2arc_thread, vd, 0,
+	    &p0, TS_RUN, minclsyspri);
+}
+
 /*
  * A wrapper which calls vdev_trim_ranges(). It is intended to be called
  * on leaf vdevs.
@@ -1526,14 +1548,6 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		vd->vdev_trim_bytes_done = 0;
 		vd->vdev_trim_bytes_est = size;
 
-		/*
-		 * The VDEV_LEAF_ZAP_TRIM_* entries may have been updated by
-		 * vdev_trim().  Wait for the updated values to be reflected
-		 * in the zap in order to start with the requested settings.
-		 * Same strategy as in vdev_trim_thread().
-		 */
-		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
-
 		mutex_enter(&vd->vdev_trim_lock);
 		vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
 		mutex_exit(&vd->vdev_trim_lock);
@@ -1559,18 +1573,6 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		}
 		ASSERT(vd->vdev_trim_thread != NULL ||
 		    vd->vdev_trim_inflight[TRIM_TYPE_MANUAL] == 0);
-
-		/*
-		 * Drop the vdev_trim_lock while we sync out the txg since it's
-		 * possible that a device might be trying to come online and
-		 * must check to see if it needs to restart a trim. That thread
-		 * will be holding the spa_config_lock which would prevent the
-		 * txg_wait_synced from completing. Same strategy as in
-		 * vdev_trim_thread().
-		 */
-		mutex_exit(&vd->vdev_trim_lock);
-		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
-		mutex_enter(&vd->vdev_trim_lock);
 
 		/*
 		 * Update the header of the cache device here, before
@@ -1603,6 +1605,7 @@ EXPORT_SYMBOL(vdev_autotrim);
 EXPORT_SYMBOL(vdev_autotrim_stop_all);
 EXPORT_SYMBOL(vdev_autotrim_stop_wait);
 EXPORT_SYMBOL(vdev_autotrim_restart);
+EXPORT_SYMBOL(vdev_trim_l2arc);
 EXPORT_SYMBOL(vdev_trim_simple);
 
 /* BEGIN CSTYLED */

@@ -394,7 +394,6 @@ typedef struct l2arc_dev {
 	boolean_t		l2ad_rebuild;
 	boolean_t		l2ad_rebuild_cancel;
 	boolean_t		l2ad_rebuild_began;
-	boolean_t		l2ad_trim_all;	    /* TRIM whole device */
 	uint64_t		l2ad_log_entries;   /* entries per log blk  */
 	uint64_t		l2ad_evict;	 /* evicted offset in bytes */
 	/* List of pointers to log blocks present in the L2ARC device */

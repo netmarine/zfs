@@ -926,8 +926,6 @@ static void l2arc_blk_fetch_done(zio_t *zio);
 static inline uint64_t
     l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev);
 
-static void l2arc_dev_trim(l2arc_dev_t *dev);
-
 /*
  * We use Cityhash for this. It's fast, and has good hash properties without
  * requiring any large static buffers.
@@ -7827,11 +7825,11 @@ l2arc_dev_get_next(void)
 			break;
 
 	} while (vdev_is_dead(next->l2ad_vdev) || next->l2ad_rebuild ||
-	    next->l2ad_trim_all);
+	    next->l2ad_vdev->vdev_trim_thread != NULL);
 
 	/* if we were unable to find any usable vdevs, return NULL */
 	if (vdev_is_dead(next->l2ad_vdev) || next->l2ad_rebuild ||
-	    next->l2ad_trim_all)
+	    next->l2ad_vdev->vdev_trim_thread != NULL)
 		next = NULL;
 
 	l2arc_dev_last = next;
@@ -9112,7 +9110,6 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_evict = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
-	adddev->l2ad_trim_all = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
 	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
 
@@ -9228,7 +9225,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 * the whole device again.
 		 */
 		if (l2arc_trim_ahead > 0) {
-			dev->l2ad_trim_all = B_TRUE;
+			vdev_trim_l2arc(dev->l2ad_vdev);
 		} else {
 			bzero(l2dhdr, l2dhdr_asize);
 			l2arc_dev_hdr_update(dev);
@@ -9260,6 +9257,17 @@ l2arc_remove_vdev(vdev_t *vd)
 			cv_wait(&l2arc_rebuild_thr_cv, &l2arc_rebuild_thr_lock);
 	}
 	mutex_exit(&l2arc_rebuild_thr_lock);
+
+	/*
+	 * Cancel any ongoing TRIM.
+	 */
+	if (vd->vdev_trim_thread != NULL) {
+		spa_config_exit(vd->vdev_spa, SCL_ALL, FTAG);
+		mutex_enter(&vd->vdev_trim_lock);
+		vdev_trim_stop(vd, VDEV_TRIM_CANCELED, NULL);
+		mutex_exit(&vd->vdev_trim_lock);
+		spa_config_enter(vd->vdev_spa, SCL_ALL, FTAG, RW_WRITER);
+	}
 
 	/*
 	 * Remove device from global list
@@ -9352,49 +9360,6 @@ l2arc_stop(void)
 	while (l2arc_thread_exit != 0)
 		cv_wait(&l2arc_feed_thr_cv, &l2arc_feed_thr_lock);
 	mutex_exit(&l2arc_feed_thr_lock);
-}
-
-/*
- * Punches out TRIM threads for the L2ARC devices in a spa and assigns them
- * to vd->vdev_trim_thread variable. This facilitates the management of
- * trimming the whole cache device using TRIM_TYPE_MANUAL upon addition
- * to a pool or pool creation or when the header of the device is invalid.
- */
-void
-l2arc_spa_trim(spa_t *spa)
-{
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-
-	/*
-	 * Locate the spa's l2arc devices and kick off TRIM threads.
-	 */
-	for (int i = 0; i < spa->spa_l2cache.sav_count; i++) {
-		l2arc_dev_t *dev =
-		    l2arc_vdev_get(spa->spa_l2cache.sav_vdevs[i]);
-		if (dev == NULL) {
-			/* Don't attempt TRIM if the vdev is UNAVAIL */
-			continue;
-		}
-
-		if (dev->l2ad_trim_all) {
-			dev->l2ad_vdev->vdev_trim_thread = thread_create(NULL,
-			    0, (void (*)(void *))l2arc_dev_trim, dev, 0, &p0,
-			    TS_RUN, minclsyspri);
-		}
-	}
-}
-
-static void
-l2arc_dev_trim(l2arc_dev_t *dev)
-{
-	VERIFY(dev->l2ad_trim_all);
-
-	vdev_trim_simple(dev->l2ad_vdev,
-	    0, dev->l2ad_end - VDEV_LABEL_START_SIZE,
-	    TRIM_TYPE_MANUAL);
-	dev->l2ad_trim_all = B_FALSE;
-
-	thread_exit();
 }
 
 /*
