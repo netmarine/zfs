@@ -1491,7 +1491,9 @@ static void
 vdev_trim_l2arc_thread(void *arg)
 {
 	vdev_t *vd = arg;
+	l2arc_dev_t *dev = l2arc_vdev_get(vd);
 	vdev_trim_simple(vd, 0, vdev_get_min_asize(vd), TRIM_TYPE_MANUAL);
+	dev->l2ad_trim_all = B_FALSE;
 
 	thread_exit();
 }
@@ -1503,19 +1505,28 @@ vdev_trim_l2arc_thread(void *arg)
  * to a pool or pool creation or when the header of the device is invalid.
  */
 void
-vdev_trim_l2arc(vdev_t *vd)
+vdev_trim_l2arc(spa_t *spa)
 {
-	ASSERT(MUTEX_HELD(&vd->vdev_trim_lock));
-	ASSERT(vd->vdev_ops->vdev_op_leaf);
-	ASSERT(vdev_is_concrete(vd));
-	ASSERT3P(vd->vdev_trim_thread, ==, NULL);
-	ASSERT(!vd->vdev_detached);
-	ASSERT(!vd->vdev_trim_exit_wanted);
-	ASSERT(!vd->vdev_top->vdev_removing);
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
-	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
-	vd->vdev_trim_thread = thread_create(NULL, 0,
-	    vdev_trim_l2arc_thread, vd, 0, &p0, TS_RUN, maxclsyspri);
+	/*
+	 * Locate the spa's l2arc devices and kick off TRIM threads.
+	 */
+	for (int i = 0; i < spa->spa_l2cache.sav_count; i++) {
+		vdev_t *vd = spa->spa_l2cache.sav_vdevs[i];
+		l2arc_dev_t *dev = l2arc_vdev_get(vd);
+
+		if (dev == NULL || !dev->l2ad_trim_all) {
+			/* Don't attempt TRIM if the vdev is UNAVAIL */
+			continue;
+		}
+
+		mutex_enter(&vd->vdev_trim_lock);
+		vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
+		vd->vdev_trim_thread = thread_create(NULL, 0,
+		    vdev_trim_l2arc_thread, vd, 0, &p0, TS_RUN, maxclsyspri);
+		mutex_exit(&vd->vdev_trim_lock);
+	}
 }
 
 /*

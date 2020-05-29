@@ -406,6 +406,7 @@ typedef struct l2arc_dev {
 	 * Number of log blocks present on the device.
 	 */
 	zfs_refcount_t		l2ad_lb_count;
+	boolean_t		l2ad_trim_all; /* TRIM whole device */
 } l2arc_dev_t;
 
 /*

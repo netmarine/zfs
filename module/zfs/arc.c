@@ -7825,11 +7825,11 @@ l2arc_dev_get_next(void)
 			break;
 
 	} while (vdev_is_dead(next->l2ad_vdev) || next->l2ad_rebuild ||
-	    next->l2ad_vdev->vdev_trim_thread != NULL);
+	    next->l2ad_trim_all);
 
 	/* if we were unable to find any usable vdevs, return NULL */
 	if (vdev_is_dead(next->l2ad_vdev) || next->l2ad_rebuild ||
-	    next->l2ad_vdev->vdev_trim_thread != NULL)
+	    next->l2ad_trim_all)
 		next = NULL;
 
 	l2arc_dev_last = next;
@@ -9110,6 +9110,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_evict = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
+	adddev->l2ad_trim_all = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
 	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
 
@@ -9225,9 +9226,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 * the whole device again.
 		 */
 		if (l2arc_trim_ahead > 0) {
-			mutex_enter(&vd->vdev_trim_lock);
-			vdev_trim_l2arc(dev->l2ad_vdev);
-			mutex_exit(&vd->vdev_trim_lock);
+			dev->l2ad_trim_all = B_TRUE;
 		} else {
 			bzero(l2dhdr, l2dhdr_asize);
 			l2arc_dev_hdr_update(dev);
