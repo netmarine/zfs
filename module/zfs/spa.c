@@ -1897,6 +1897,13 @@ spa_load_l2cache(spa_t *spa)
 			if (!vdev_is_dead(vd))
 				l2arc_add_vdev(spa, vd);
 
+			/*
+			 * Upon cache device addition to a pool or pool
+			 * creation with a cache device or if the header
+			 * of the device is invalid we issue an async
+			 * TRIM command for the whole device which will
+			 * execute if l2arc_trim_ahead > 0.
+			 */
 			spa_async_request(spa, SPA_ASYNC_L2CACHE_TRIM);
 		}
 	}
