@@ -9225,7 +9225,9 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 * the whole device again.
 		 */
 		if (l2arc_trim_ahead > 0) {
+			mutex_enter(&vd->vdev_trim_lock);
 			vdev_trim_l2arc(dev->l2ad_vdev);
+			mutex_exit(&vd->vdev_trim_lock);
 		} else {
 			bzero(l2dhdr, l2dhdr_asize);
 			l2arc_dev_hdr_update(dev);

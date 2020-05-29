@@ -430,7 +430,7 @@ vdev_autotrim_cb(zio_t *zio)
  * never reissued on failure.
  */
 static void
-vdev_l2arc_trim_cb(zio_t *zio)
+vdev_trim_l2arc_cb(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
 
@@ -541,7 +541,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	} else if (ta->trim_type == TRIM_TYPE_AUTO) {
 		cb = vdev_autotrim_cb;
 	} else {
-		cb = vdev_l2arc_trim_cb;
+		cb = vdev_trim_l2arc_cb;
 	}
 
 	zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
@@ -1488,8 +1488,9 @@ vdev_autotrim_restart(spa_t *spa)
 }
 
 static void
-vdev_trim_l2arc_thread(vdev_t *vd)
+vdev_trim_l2arc_thread(void *arg)
 {
+	vdev_t *vd = arg;
 	vdev_trim_simple(vd, 0, vdev_get_min_asize(vd), TRIM_TYPE_MANUAL);
 
 	thread_exit();
@@ -1504,9 +1505,17 @@ vdev_trim_l2arc_thread(vdev_t *vd)
 void
 vdev_trim_l2arc(vdev_t *vd)
 {
-	vd->vdev_trim_thread = thread_create(NULL,
-	    0, (void (*)(void *))vdev_trim_l2arc_thread, vd, 0,
-	    &p0, TS_RUN, minclsyspri);
+	ASSERT(MUTEX_HELD(&vd->vdev_trim_lock));
+	ASSERT(vd->vdev_ops->vdev_op_leaf);
+	ASSERT(vdev_is_concrete(vd));
+	ASSERT3P(vd->vdev_trim_thread, ==, NULL);
+	ASSERT(!vd->vdev_detached);
+	ASSERT(!vd->vdev_trim_exit_wanted);
+	ASSERT(!vd->vdev_top->vdev_removing);
+
+	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
+	vd->vdev_trim_thread = thread_create(NULL, 0,
+	    vdev_trim_l2arc_thread, vd, 0, &p0, TS_RUN, maxclsyspri);
 }
 
 /*
