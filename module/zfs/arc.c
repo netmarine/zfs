@@ -9260,17 +9260,6 @@ l2arc_remove_vdev(vdev_t *vd)
 	mutex_exit(&l2arc_rebuild_thr_lock);
 
 	/*
-	 * Cancel any ongoing TRIM.
-	 */
-	if (vd->vdev_trim_thread != NULL) {
-		spa_config_exit(vd->vdev_spa, SCL_ALL, FTAG);
-		mutex_enter(&vd->vdev_trim_lock);
-		vdev_trim_stop(vd, VDEV_TRIM_CANCELED, NULL);
-		mutex_exit(&vd->vdev_trim_lock);
-		spa_config_enter(vd->vdev_spa, SCL_ALL, FTAG, RW_WRITER);
-	}
-
-	/*
 	 * Remove device from global list
 	 */
 	mutex_enter(&l2arc_dev_mtx);
