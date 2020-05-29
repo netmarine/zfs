@@ -1548,6 +1548,8 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		vd->vdev_trim_bytes_done = 0;
 		vd->vdev_trim_bytes_est = size;
 
+		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
+
 		mutex_enter(&vd->vdev_trim_lock);
 		vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
 		mutex_exit(&vd->vdev_trim_lock);
@@ -1573,6 +1575,10 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 		}
 		ASSERT(vd->vdev_trim_thread != NULL ||
 		    vd->vdev_trim_inflight[TRIM_TYPE_MANUAL] == 0);
+
+		mutex_exit(&vd->vdev_trim_lock);
+		txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
+		mutex_enter(&vd->vdev_trim_lock);
 
 		/*
 		 * Update the header of the cache device here, before
