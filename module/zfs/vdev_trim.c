@@ -1523,14 +1523,6 @@ vdev_trim_l2arc_thread(void *arg)
 	vd->vdev_trim_bytes_done = 0;
 	vd->vdev_trim_bytes_est = vdev_get_min_asize(vd);
 
-	/*
-	 * The VDEV_LEAF_ZAP_TRIM_* entries may have been updated by
-	 * vdev_trim().  Wait for the updated values to be reflected
-	 * in the zap in order to start with the requested settings.
-	 * Same strategy as in vdev_trim_thread().
-	 */
-	txg_wait_synced(spa_get_dsl(vd->vdev_spa), 0);
-
 	mutex_enter(&vd->vdev_trim_lock);
 	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
 	mutex_exit(&vd->vdev_trim_lock);
