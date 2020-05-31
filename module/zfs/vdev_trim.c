@@ -1618,7 +1618,7 @@ vdev_trim_l2arc(spa_t *spa)
  * on leaf vdevs.
  */
 int
-vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
+vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size)
 {
 	trim_args_t		ta;
 	range_seg64_t 		physical_rs;
@@ -1634,7 +1634,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 	bzero(&ta, sizeof (ta));
 	ta.trim_vdev = vd;
 	ta.trim_tree = range_tree_create(NULL, RANGE_SEG64, NULL, 0, 0);
-	ta.trim_type = type;
+	ta.trim_type = TRIM_TYPE_SIMPLE;
 	ta.trim_extent_bytes_max = zfs_trim_extent_bytes_max;
 	ta.trim_extent_bytes_min = SPA_MINBLOCKSIZE;
 	ta.trim_flags = 0;
@@ -1651,7 +1651,7 @@ vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size, trim_type_t type)
 	error = vdev_trim_ranges(&ta);
 
 	mutex_enter(&vd->vdev_trim_io_lock);
-	while (vd->vdev_trim_inflight[ta.trim_type] > 0) {
+	while (vd->vdev_trim_inflight[TRIM_TYPE_SIMPLE] > 0) {
 		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
 	}
 	mutex_exit(&vd->vdev_trim_io_lock);

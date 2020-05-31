@@ -44,8 +44,7 @@ extern void vdev_autotrim(spa_t *spa);
 extern void vdev_autotrim_stop_all(spa_t *spa);
 extern void vdev_autotrim_stop_wait(vdev_t *vd);
 extern void vdev_autotrim_restart(spa_t *spa);
-extern int vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size,
-    trim_type_t type);
+extern int vdev_trim_simple(vdev_t *vd, uint64_t start, uint64_t size);
 
 #ifdef	__cplusplus
 }
