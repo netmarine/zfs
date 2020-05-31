@@ -424,13 +424,13 @@ vdev_autotrim_cb(zio_t *zio)
 }
 
 /*
- * The zio_done_func_t done callback for each L2ARC TRIM issued.  It
- * is responsible for updating the TRIM stats and limiting the number of
- * in flight TRIM I/Os.  L2ARC TRIM I/Os are best effort and are
- * never reissued on failure.
+ * The zio_done_func_t done callback for each TRIM issued via
+ * vdev_trim_simple(). It is responsible for updating the TRIM stats and
+ * limiting the number of in flight TRIM I/Os.  Simple TRIM I/Os are best
+ * effort and are never reissued on failure.
  */
 static void
-vdev_trim_l2arc_cb(zio_t *zio)
+vdev_trim_simple_cb(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
 
@@ -438,15 +438,15 @@ vdev_trim_l2arc_cb(zio_t *zio)
 
 	if (zio->io_error != 0) {
 		vd->vdev_stat.vs_trim_errors++;
-		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_L2ARC,
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_SIMPLE,
 		    0, 0, 0, 0, 1, zio->io_orig_size);
 	} else {
-		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_L2ARC,
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_SIMPLE,
 		    1, zio->io_orig_size, 0, 0, 0, 0);
 	}
 
-	ASSERT3U(vd->vdev_trim_inflight[TRIM_TYPE_L2ARC], >, 0);
-	vd->vdev_trim_inflight[TRIM_TYPE_L2ARC]--;
+	ASSERT3U(vd->vdev_trim_inflight[TRIM_TYPE_SIMPLE], >, 0);
+	vd->vdev_trim_inflight[TRIM_TYPE_SIMPLE]--;
 	cv_broadcast(&vd->vdev_trim_io_cv);
 	mutex_exit(&vd->vdev_trim_io_lock);
 
@@ -541,7 +541,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	} else if (ta->trim_type == TRIM_TYPE_AUTO) {
 		cb = vdev_autotrim_cb;
 	} else {
-		cb = vdev_trim_l2arc_cb;
+		cb = vdev_trim_simple_cb;
 	}
 
 	zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,

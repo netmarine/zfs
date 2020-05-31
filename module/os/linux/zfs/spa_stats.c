@@ -903,12 +903,12 @@ static spa_iostats_t spa_iostats_template = {
 	{ "autotrim_bytes_skipped",		KSTAT_DATA_UINT64 },
 	{ "autotrim_extents_failed",		KSTAT_DATA_UINT64 },
 	{ "autotrim_bytes_failed",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_extents_written",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_bytes_written",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_extents_skipped",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_bytes_skipped",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_extents_failed",		KSTAT_DATA_UINT64 },
-	{ "l2arc_trim_bytes_failed",		KSTAT_DATA_UINT64 },
+	{ "simple_trim_extents_written",	KSTAT_DATA_UINT64 },
+	{ "simple_trim_bytes_written",		KSTAT_DATA_UINT64 },
+	{ "simple_trim_extents_skipped",	KSTAT_DATA_UINT64 },
+	{ "simple_trim_bytes_skipped",		KSTAT_DATA_UINT64 },
+	{ "simple_trim_extents_failed",		KSTAT_DATA_UINT64 },
+	{ "simple_trim_bytes_failed",		KSTAT_DATA_UINT64 },
 };
 
 #define	SPA_IOSTATS_ADD(stat, val) \
@@ -943,12 +943,12 @@ spa_iostats_trim_add(spa_t *spa, trim_type_t type,
 		SPA_IOSTATS_ADD(autotrim_extents_failed, extents_failed);
 		SPA_IOSTATS_ADD(autotrim_bytes_failed, bytes_failed);
 	} else {
-		SPA_IOSTATS_ADD(l2arc_trim_extents_written, extents_written);
-		SPA_IOSTATS_ADD(l2arc_trim_bytes_written, bytes_written);
-		SPA_IOSTATS_ADD(l2arc_trim_extents_skipped, extents_skipped);
-		SPA_IOSTATS_ADD(l2arc_trim_bytes_skipped, bytes_skipped);
-		SPA_IOSTATS_ADD(l2arc_trim_extents_failed, extents_failed);
-		SPA_IOSTATS_ADD(l2arc_trim_bytes_failed, bytes_failed);
+		SPA_IOSTATS_ADD(simple_trim_extents_written, extents_written);
+		SPA_IOSTATS_ADD(simple_trim_bytes_written, bytes_written);
+		SPA_IOSTATS_ADD(simple_trim_extents_skipped, extents_skipped);
+		SPA_IOSTATS_ADD(simple_trim_bytes_skipped, bytes_skipped);
+		SPA_IOSTATS_ADD(simple_trim_extents_failed, extents_failed);
+		SPA_IOSTATS_ADD(simple_trim_bytes_failed, bytes_failed);
 	}
 }
 

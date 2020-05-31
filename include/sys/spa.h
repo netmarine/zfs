@@ -745,7 +745,7 @@ typedef enum {
 typedef enum trim_type {
 	TRIM_TYPE_MANUAL = 0,
 	TRIM_TYPE_AUTO = 1,
-	TRIM_TYPE_L2ARC = 2
+	TRIM_TYPE_SIMPLE = 2
 } trim_type_t;
 
 /* state manipulation functions */
@@ -942,12 +942,12 @@ typedef struct spa_iostats {
 	kstat_named_t	autotrim_bytes_skipped;
 	kstat_named_t	autotrim_extents_failed;
 	kstat_named_t	autotrim_bytes_failed;
-	kstat_named_t	l2arc_trim_extents_written;
-	kstat_named_t	l2arc_trim_bytes_written;
-	kstat_named_t	l2arc_trim_extents_skipped;
-	kstat_named_t	l2arc_trim_bytes_skipped;
-	kstat_named_t	l2arc_trim_extents_failed;
-	kstat_named_t	l2arc_trim_bytes_failed;
+	kstat_named_t	simple_trim_extents_written;
+	kstat_named_t	simple_trim_bytes_written;
+	kstat_named_t	simple_trim_extents_skipped;
+	kstat_named_t	simple_trim_bytes_skipped;
+	kstat_named_t	simple_trim_extents_failed;
+	kstat_named_t	simple_trim_bytes_failed;
 } spa_iostats_t;
 
 extern void spa_stats_init(spa_t *spa);
