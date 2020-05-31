@@ -1491,17 +1491,18 @@ static void
 vdev_trim_l2arc_thread(void *arg)
 {
 	vdev_t		*vd = arg;
+	spa_t		*spa = vd->vdev_spa;
 	l2arc_dev_t	*dev = l2arc_vdev_get(vd);
 	trim_args_t	ta;
 	range_seg64_t 	physical_rs;
 
-	physical_rs.rs_start = 0;
-	physical_rs.rs_end = vdev_get_min_asize(vd);
-
 	ASSERT(vdev_is_concrete(vd));
-	ASSERT(vd->vdev_ops->vdev_op_leaf);
-	ASSERT(!vd->vdev_detached);
-	ASSERT(!vd->vdev_top->vdev_removing);
+	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
+
+	vd->vdev_trim_last_offset = 0;
+	vd->vdev_trim_rate = 0;
+	vd->vdev_trim_partial = 0;
+	vd->vdev_trim_secure = 0;
 
 	bzero(&ta, sizeof (ta));
 	ta.trim_vdev = vd;
@@ -1511,17 +1512,12 @@ vdev_trim_l2arc_thread(void *arg)
 	ta.trim_extent_bytes_min = SPA_MINBLOCKSIZE;
 	ta.trim_flags = 0;
 
-	ASSERT3U(physical_rs.rs_end, >=, physical_rs.rs_start);
+	physical_rs.rs_start = vd->vdev_trim_bytes_done = 0;
+	physical_rs.rs_end = vd->vdev_trim_bytes_est =
+	    vdev_get_min_asize(vd);
 
-	if (physical_rs.rs_end > physical_rs.rs_start) {
-		range_tree_add(ta.trim_tree, physical_rs.rs_start,
-		    physical_rs.rs_end - physical_rs.rs_start);
-	} else {
-		ASSERT3U(physical_rs.rs_end, ==, physical_rs.rs_start);
-	}
-
-	vd->vdev_trim_bytes_done = 0;
-	vd->vdev_trim_bytes_est = vdev_get_min_asize(vd);
+	range_tree_add(ta.trim_tree, physical_rs.rs_start,
+	    physical_rs.rs_end - physical_rs.rs_start);
 
 	mutex_enter(&vd->vdev_trim_lock);
 	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
@@ -1529,6 +1525,7 @@ vdev_trim_l2arc_thread(void *arg)
 
 	(void) vdev_trim_ranges(&ta);
 
+	spa_config_exit(spa, SCL_CONFIG, FTAG);
 	mutex_enter(&vd->vdev_trim_io_lock);
 	while (vd->vdev_trim_inflight[TRIM_TYPE_MANUAL] > 0) {
 		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
@@ -1603,6 +1600,12 @@ vdev_trim_l2arc(spa_t *spa)
 		}
 
 		mutex_enter(&vd->vdev_trim_lock);
+		ASSERT(vd->vdev_ops->vdev_op_leaf);
+		ASSERT(vdev_is_concrete(vd));
+		ASSERT3P(vd->vdev_trim_thread, ==, NULL);
+		ASSERT(!vd->vdev_detached);
+		ASSERT(!vd->vdev_trim_exit_wanted);
+		ASSERT(!vd->vdev_top->vdev_removing);
 		vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, 0, 0, 0);
 		vd->vdev_trim_thread = thread_create(NULL, 0,
 		    vdev_trim_l2arc_thread, vd, 0, &p0, TS_RUN, maxclsyspri);
