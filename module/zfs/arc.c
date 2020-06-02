@@ -867,10 +867,17 @@ static void l2arc_read_done(zio_t *);
 /*
  * L2ARC TRIM
  * l2arc_trim_ahead : A ZFS module parameter that controls how much ahead of
- * 		the current write size we should TRIM. It is defined as a
- * 		percentage of the write size. The minimum TRIM size is 64MB.
- * 		If set to 100 and the write size is greater than 64MB we don't
- * 		trim ahead. The default is 0, TRIM is disabled for L2ARC.
+ * 		the current write size (l2arc_write_max) we should TRIM if we
+ * 		have filled the device. It is defined as a percentage of the
+ * 		write size. If set to 100 we trim twice the space required to
+ * 		accommodate upcoming writes. A minimum of 64MB will be trimmed.
+ * 		It also enables TRIM of the whole L2ARC device upon creation or
+ * 		addition to an existing pool or if the header of the device is
+ * 		invalid upon importing a pool or onlining a cache device. The
+ * 		default is 0, which disables TRIM on L2ARC altogether as it can
+ * 		put significant stress on the underlying storage devices. This
+ * 		will vary depending of how well the specific device handles
+ * 		these commands.
  */
 unsigned long l2arc_trim_ahead = 0;
 
@@ -8364,7 +8371,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	distance += l2arc_log_blk_overhead(distance, dev);
 	if (vd->vdev_has_trim && l2arc_trim_ahead > 0) {
 		/*
-		 * Trim ahead of the evict hand 64MB or (l2arc_trim_ahead/100)
+		 * Trim ahead of the write size 64MB or (l2arc_trim_ahead/100)
 		 * times the write size, whichever is greater.
 		 */
 		distance += MAX(64 * 1024 * 1024,
