@@ -36,7 +36,7 @@
 
 verify_runnable "global"
 
-log_assert "Auto trim of L2ARC succeeds."
+log_assert "Trim of L2ARC succeeds."
 
 function cleanup
 {
@@ -103,4 +103,4 @@ log_must test $cache_alloc -lt $cache_size
 log_must zpool destroy $TESTPOOL
 log_must rm -f $VDEVS
 
-log_pass "Auto trim of L2ARC succeeds."
+log_pass "Trim of L2ARC succeeds."
