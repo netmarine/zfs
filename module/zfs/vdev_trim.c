@@ -1559,7 +1559,8 @@ vdev_trim_l2arc_thread(void *arg)
 	/*
 	 * Update the header of the cache device here, before
 	 * broadcasting vdev_trim_cv which may lead to the removal
-	 * of the device.
+	 * of the device. The same applies for setting l2ad_trim_all to
+	 * false.
 	 */
 	spa_config_enter(vd->vdev_spa, SCL_L2ARC, vd,
 	    RW_READER);
@@ -1568,10 +1569,11 @@ vdev_trim_l2arc_thread(void *arg)
 	spa_config_exit(vd->vdev_spa, SCL_L2ARC, vd);
 
 	vd->vdev_trim_thread = NULL;
+	if (vd->vdev_trim_state == VDEV_TRIM_COMPLETE)
+		dev->l2ad_trim_all = B_FALSE;
+
 	cv_broadcast(&vd->vdev_trim_cv);
 	mutex_exit(&vd->vdev_trim_lock);
-
-	dev->l2ad_trim_all = B_FALSE;
 
 	thread_exit();
 }
