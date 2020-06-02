@@ -56,7 +56,7 @@ log_onexit cleanup
 typeset l2arc_trimahead=$(get_tunable L2ARC_TRIM_AHEAD)
 typeset l2arc_writemax=$(get_tunable L2ARC_WRITE_MAX)
 log_must set_tunable32 L2ARC_TRIM_AHEAD 1
-log_must set_tunable32 L2ARC_WRITE_MAX $(( 64 * 1024 * 1024))
+log_must set_tunable32 L2ARC_WRITE_MAX $((64 * 1024 * 1024))
 VDEVS="$TRIM_VDEV1 $TRIM_VDEV2"
 log_must truncate -s $((MINVDEVSIZE)) $TRIM_VDEV2
 log_must truncate -s $((4 * MINVDEVSIZE)) $TRIM_VDEV1
