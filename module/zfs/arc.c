@@ -9226,11 +9226,11 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 		 * In this case TRIM the whole device if l2arc_trim_ahead > 0,
 		 * otherwise create a new header. We zero out the memory holding
 		 * the header to reset dh_start_lbps. If we TRIM the whole
-		 * device the new header will be written by vdev_trim_simple()
-		 * at the end of the TRIM to update the trim_state in the
-		 * header too. When reading the header, if trim_state is not
-		 * VDEV_TRIM_COMPLETE and l2arc_trim_ahead > 0 we opt to TRIM
-		 * the whole device again.
+		 * device the new header will be written by
+		 * vdev_trim_l2arc_thread() at the end of the TRIM to update the
+		 * trim_state in the header too. When reading the header, if
+		 * trim_state is not VDEV_TRIM_COMPLETE and l2arc_trim_ahead > 0
+		 * we opt to TRIM the whole device again.
 		 */
 		if (l2arc_trim_ahead > 0) {
 			dev->l2ad_trim_all = B_TRUE;

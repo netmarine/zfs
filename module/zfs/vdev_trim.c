@@ -1595,7 +1595,13 @@ vdev_trim_l2arc(spa_t *spa)
 		l2arc_dev_t *dev = l2arc_vdev_get(vd);
 
 		if (dev == NULL || !dev->l2ad_trim_all) {
-			/* Don't attempt TRIM if the vdev is UNAVAIL */
+			/*
+			 * Don't attempt TRIM if the vdev is UNAVAIL or if the
+			 * cache device was not marked for whole device TRIM
+			 * (ie l2arc_trim_ahead = 0, or the L2ARC device header
+			 * is valid with trim_state = VDEV_TRIM_COMPLETE and
+			 * l2ad_log_entries > 0).
+			 */
 			continue;
 		}
 
