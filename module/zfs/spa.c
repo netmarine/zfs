@@ -1942,7 +1942,7 @@ out:
 
 			if (spa_l2cache_exists(vd->vdev_guid, &pool) &&
 			    pool != 0ULL && l2arc_vdev_present(vd))
-				l2arc_remove_vdev(vd);
+				l2arc_remove_vdev(vd, B_FALSE);
 			vdev_clear_stats(vd);
 			vdev_free(vd);
 		}
@@ -5594,7 +5594,7 @@ spa_l2cache_drop(spa_t *spa)
 
 		if (spa_l2cache_exists(vd->vdev_guid, &pool) &&
 		    pool != 0ULL && l2arc_vdev_present(vd))
-			l2arc_remove_vdev(vd);
+			l2arc_remove_vdev(vd, B_TRUE);
 	}
 }
 

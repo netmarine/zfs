@@ -9267,7 +9267,7 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
  * Remove a vdev from the L2ARC.
  */
 void
-l2arc_remove_vdev(vdev_t *vd)
+l2arc_remove_vdev(vdev_t *vd, boolean_t export)
 {
 	l2arc_dev_t *remdev = NULL;
 
@@ -9289,7 +9289,7 @@ l2arc_remove_vdev(vdev_t *vd)
 	mutex_exit(&l2arc_rebuild_thr_lock);
 
 	mutex_enter(&l2arc_dump_arc_lock);
-	if (spa_writeable(vd->vdev_spa)) {
+	if (export && spa_writeable(vd->vdev_spa)) {
 		l2arc_dump_arc = 1;
 		while (l2arc_dump_arc != 0)
 			cv_wait(&l2arc_dump_arc_cv, &l2arc_dump_arc_lock);
