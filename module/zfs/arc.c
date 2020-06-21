@@ -900,8 +900,6 @@ unsigned long l2arc_trim_ahead = 0;
 int l2arc_rebuild_enabled = B_TRUE;
 unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
 
-int l2arc_dump_arc = 0;
-
 /* L2ARC persistence rebuild control routines. */
 void l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen);
 static void l2arc_dev_rebuild_start(l2arc_dev_t *dev);
@@ -7733,16 +7731,23 @@ l2arc_write_size(l2arc_dev_t *dev)
 {
 	uint64_t size, dev_size, tsize;
 
+	if (dev->l2ad_dump_arc)
+		size = dev->l2ad_write_max;
+	else
+		size = l2arc_write_max;
+
 	/*
 	 * Make sure our globals have meaningful values in case the user
 	 * altered them.
 	 */
-	size = l2arc_write_max;
 	if (size == 0) {
 		cmn_err(CE_NOTE, "Bad value for l2arc_write_max, value must "
 		    "be greater than zero, resetting it to the default (%d)",
 		    L2ARC_WRITE_SIZE);
-		size = l2arc_write_max = L2ARC_WRITE_SIZE;
+		if (dev->l2ad_dump_arc)
+			size = dev->l2ad_write_max = L2ARC_WRITE_SIZE;
+		else
+			size = l2arc_write_max = L2ARC_WRITE_SIZE;
 	}
 
 	if (arc_warm == B_FALSE)
@@ -7767,13 +7772,18 @@ l2arc_write_size(l2arc_dev_t *dev)
 		    l2arc_log_blk_overhead(size, dev),
 		    dev->l2ad_vdev->vdev_guid, L2ARC_WRITE_SIZE);
 		size = l2arc_write_max = l2arc_write_boost = L2ARC_WRITE_SIZE;
+		if (dev->l2ad_dump_arc)
+			size = dev->l2ad_write_max = l2arc_write_boost =
+			    L2ARC_WRITE_SIZE;
+		else
+			size = l2arc_write_max = l2arc_write_boost =
+			    L2ARC_WRITE_SIZE;
 
 		if (arc_warm == B_FALSE)
 			size += l2arc_write_boost;
 	}
 
 	return (size);
-
 }
 
 static clock_t
@@ -8778,7 +8788,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			}
 
 			passed_sz += HDR_GET_LSIZE(hdr);
-			if (l2arc_dump_arc != 1 && l2arc_headroom != 0 &&
+			if (dev->l2ad_dump_arc != 1 && l2arc_headroom != 0 &&
 			    passed_sz > headroom) {
 				/*
 				 * Searched too far.
@@ -8951,7 +8961,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 		if (try == L2ARC_FEED_TYPES) {
 			mutex_enter(&l2arc_dump_arc_lock);
-			l2arc_dump_arc = 0;
+			dev->l2ad_dump_arc = 0;
 			cv_broadcast(&l2arc_dump_arc_cv);
 			mutex_exit(&l2arc_dump_arc_lock);
 		}
@@ -8976,7 +8986,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 	if (try == L2ARC_FEED_TYPES) {
 		mutex_enter(&l2arc_dump_arc_lock);
-		l2arc_dump_arc = 0;
+		dev->l2ad_dump_arc = 0;
 		cv_broadcast(&l2arc_dump_arc_cv);
 		mutex_exit(&l2arc_dump_arc_lock);
 	}
@@ -9142,6 +9152,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_trim_all = B_FALSE;
 	list_link_init(&adddev->l2ad_node);
 	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
+	adddev->l2ad_dump_arc = 0;
+	adddev->l2ad_write_max = 64 * 1024 * 1024;
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -9290,8 +9302,8 @@ l2arc_remove_vdev(vdev_t *vd, boolean_t export)
 
 	mutex_enter(&l2arc_dump_arc_lock);
 	if (export && spa_writeable(vd->vdev_spa)) {
-		l2arc_dump_arc = 1;
-		while (l2arc_dump_arc != 0)
+		remdev->l2ad_dump_arc = 1;
+		while (remdev->l2ad_dump_arc != 0)
 			cv_wait(&l2arc_dump_arc_cv, &l2arc_dump_arc_lock);
 	}
 	mutex_exit(&l2arc_dump_arc_lock);
