@@ -844,6 +844,9 @@ static uint8_t l2arc_thread_exit;
 static kmutex_t l2arc_rebuild_thr_lock;
 static kcondvar_t l2arc_rebuild_thr_cv;
 
+static kmutex_t l2arc_dump_arc_lock;
+static kcondvar_t l2arc_dump_arc_cv;
+
 static abd_t *arc_get_data_abd(arc_buf_hdr_t *, uint64_t, void *);
 static void *arc_get_data_buf(arc_buf_hdr_t *, uint64_t, void *);
 static void arc_get_data_impl(arc_buf_hdr_t *, uint64_t, void *);
@@ -896,6 +899,8 @@ unsigned long l2arc_trim_ahead = 0;
  */
 int l2arc_rebuild_enabled = B_TRUE;
 unsigned long l2arc_rebuild_blocks_min_l2size = 1024 * 1024 * 1024;
+
+int l2arc_dump_arc = 0;
 
 /* L2ARC persistence rebuild control routines. */
 void l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen);
@@ -8721,6 +8726,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	l2arc_write_callback_t	*cb = NULL;
 	zio_t 			*pio, *wzio;
 	uint64_t 		guid = spa_load_guid(spa);
+	int			try = 0;
 
 	ASSERT3P(dev->l2ad_vdev, !=, NULL);
 
@@ -8733,7 +8739,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	/*
 	 * Copy buffers for L2ARC writing.
 	 */
-	for (int try = 0; try < L2ARC_FEED_TYPES; try++) {
+	for (try = 0; try < L2ARC_FEED_TYPES; try++) {
 		multilist_sublist_t *mls = l2arc_sublist_lock(try);
 		uint64_t passed_sz = 0;
 
@@ -8772,7 +8778,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			}
 
 			passed_sz += HDR_GET_LSIZE(hdr);
-			if (l2arc_headroom != 0 && passed_sz > headroom) {
+			if (l2arc_dump_arc != 1 && l2arc_headroom != 0 &&
+			    passed_sz > headroom) {
 				/*
 				 * Searched too far.
 				 */
@@ -8942,6 +8949,13 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		 */
 		l2arc_dev_hdr_update(dev);
 
+		if (try == L2ARC_FEED_TYPES) {
+			mutex_enter(&l2arc_dump_arc_lock);
+			l2arc_dump_arc = 0;
+			cv_broadcast(&l2arc_dump_arc_cv);
+			mutex_exit(&l2arc_dump_arc_lock);
+		}
+
 		return (0);
 	}
 
@@ -8959,6 +8973,13 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
 	dev->l2ad_writing = B_FALSE;
+
+	if (try == L2ARC_FEED_TYPES) {
+		mutex_enter(&l2arc_dump_arc_lock);
+		l2arc_dump_arc = 0;
+		cv_broadcast(&l2arc_dump_arc_cv);
+		mutex_exit(&l2arc_dump_arc_lock);
+	}
 
 	return (write_asize);
 }
@@ -9267,6 +9288,14 @@ l2arc_remove_vdev(vdev_t *vd)
 	}
 	mutex_exit(&l2arc_rebuild_thr_lock);
 
+	mutex_enter(&l2arc_dump_arc_lock);
+	if (spa_writeable(vd->vdev_spa)) {
+		l2arc_dump_arc = 1;
+		while (l2arc_dump_arc != 0)
+			cv_wait(&l2arc_dump_arc_cv, &l2arc_dump_arc_lock);
+	}
+	mutex_exit(&l2arc_dump_arc_lock);
+
 	/*
 	 * Remove device from global list
 	 */
@@ -9303,6 +9332,8 @@ l2arc_init(void)
 	cv_init(&l2arc_feed_thr_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&l2arc_rebuild_thr_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&l2arc_rebuild_thr_cv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&l2arc_dump_arc_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&l2arc_dump_arc_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&l2arc_dev_mtx, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&l2arc_free_on_write_mtx, NULL, MUTEX_DEFAULT, NULL);
 
@@ -9329,6 +9360,8 @@ l2arc_fini(void)
 	cv_destroy(&l2arc_feed_thr_cv);
 	mutex_destroy(&l2arc_rebuild_thr_lock);
 	cv_destroy(&l2arc_rebuild_thr_cv);
+	mutex_destroy(&l2arc_dump_arc_lock);
+	cv_destroy(&l2arc_dump_arc_cv);
 	mutex_destroy(&l2arc_dev_mtx);
 	mutex_destroy(&l2arc_free_on_write_mtx);
 

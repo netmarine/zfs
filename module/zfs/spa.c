@@ -1588,6 +1588,13 @@ spa_unload(spa_t *spa)
 		mmp_thread_stop(spa);
 
 	/*
+	 * Drop and purge level 2 cache
+	 */
+	mutex_exit(&spa_namespace_lock);
+	spa_l2cache_drop(spa);
+	mutex_enter(&spa_namespace_lock);
+
+	/*
 	 * Wait for any outstanding async I/O to complete.
 	 */
 	if (spa->spa_async_zio_root != NULL) {
@@ -1628,11 +1635,6 @@ spa_unload(spa_t *spa)
 
 	ddt_unload(spa);
 	spa_unload_log_sm_metadata(spa);
-
-	/*
-	 * Drop and purge level 2 cache
-	 */
-	spa_l2cache_drop(spa);
 
 	for (int i = 0; i < spa->spa_spares.sav_count; i++)
 		vdev_free(spa->spa_spares.sav_vdevs[i]);
