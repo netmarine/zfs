@@ -9413,7 +9413,9 @@ l2arc_rebuild(l2arc_dev_t *dev)
 	l2arc_log_blkptr_t	lbps[2];
 	l2arc_lb_ptr_buf_t	*lb_ptr_buf;
 	boolean_t		lock_held;
+	uint64_t		start, run_time_ms;
 
+	start = gethrtime();
 	this_lb = vmem_zalloc(sizeof (*this_lb), KM_SLEEP);
 	next_lb = vmem_zalloc(sizeof (*next_lb), KM_SLEEP);
 
@@ -9602,6 +9604,8 @@ out:
 	if (lock_held)
 		spa_config_exit(spa, SCL_L2ARC, vd);
 
+	run_time_ms = NSEC2MSEC(gethrtime() - start);
+	zfs_dbgmsg("L2ARC rebuild in %llu ms", run_time_ms);
 	return (err);
 }
 
