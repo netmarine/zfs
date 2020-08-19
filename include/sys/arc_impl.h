@@ -350,6 +350,8 @@ typedef struct l2arc_lb_ptr_buf {
 #define	L2BLK_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
 #define	L2BLK_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
 #define	L2BLK_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
+#define L2BLK_GET_STATE(field)		BF64_GET((field), 57, 4)
+#define L2BLK_SET_STATE(field, x)	BF64_SET((field), 57, 4, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\
