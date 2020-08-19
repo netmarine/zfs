@@ -411,7 +411,8 @@ typedef struct l2arc_dev {
 	zfs_refcount_t		l2ad_lb_count;
 	boolean_t		l2ad_trim_all; /* TRIM whole device */
 	/*
-	 * Counters ARC state of L2ARC upon caching.
+	 * Used for temporarily storing ARC state counters of L2ARC buffers
+	 * upon caching.
 	 */
 	uint64_t		l2ad_arcstate_cached[ARC_STATE_NUMTYPES];
 } l2arc_dev_t;

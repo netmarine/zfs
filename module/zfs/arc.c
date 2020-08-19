@@ -10098,6 +10098,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	kmutex_t		*hash_lock;
 	arc_buf_contents_t	type = L2BLK_GET_TYPE((le)->le_prop);
 	uint64_t		asize;
+	uint8_t			state;
 
 	/*
 	 * Do all the allocation before grabbing any locks, this lets us
@@ -10112,6 +10113,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	    L2BLK_GET_PREFETCH((le)->le_prop));
 	asize = vdev_psize_to_asize(dev->l2ad_vdev,
 	    L2BLK_GET_PSIZE((le)->le_prop));
+	state = L2BLK_GET_STATE((le)->le_prop);
 
 	/*
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
@@ -10121,6 +10123,23 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 
 	ARCSTAT_INCR(arcstat_l2_lsize, HDR_GET_LSIZE(hdr));
 	ARCSTAT_INCR(arcstat_l2_psize, HDR_GET_PSIZE(hdr));
+
+	switch (state) {
+		case ARC_STATE_MRU:
+			ARCSTAT_BUMP(arcstat_l2_mru_cached);
+			break;
+		case ARC_STATE_MRU_GHOST:
+			ARCSTAT_BUMP(arcstat_l2_mru_ghost_cached);
+			break;
+		case ARC_STATE_MFU:
+			ARCSTAT_BUMP(arcstat_l2_mfu_cached);
+			break;
+		case ARC_STATE_MFU_GHOST:
+			ARCSTAT_BUMP(arcstat_l2_mfu_ghost_cached);
+			break;
+		default:
+			break;
+	}
 
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_tail(&dev->l2ad_buflist, hdr);
