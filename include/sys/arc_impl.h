@@ -415,6 +415,10 @@ typedef struct l2arc_dev {
 	 * upon caching.
 	 */
 	uint64_t		l2ad_arcstate_cached[ARC_STATE_NUMTYPES];
+	/*
+	 * Used for temporarily storing the content type of L2ARC buffers.
+	 */
+	uint64_t		l2ad_bufc[ARC_BUFC_NUMTYPES];
 } l2arc_dev_t;
 
 /*
@@ -755,6 +759,8 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_mru_ghost_cached;
 	kstat_named_t arcstat_l2_mfu_cached;
 	kstat_named_t arcstat_l2_mfu_ghost_cached;
+	kstat_named_t arcstat_l2_bufc_data;
+	kstat_named_t arcstat_l2_bufc_metadata;
 	kstat_named_t arcstat_l2_feeds;
 	kstat_named_t arcstat_l2_rw_clash;
 	kstat_named_t arcstat_l2_read_bytes;

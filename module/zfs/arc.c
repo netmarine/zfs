@@ -536,6 +536,8 @@ arc_stats_t arc_stats = {
 	{ "l2_mru_ghost_cached",	KSTAT_DATA_UINT64 },
 	{ "l2_mfu_cached",		KSTAT_DATA_UINT64 },
 	{ "l2_mfu_ghost_cached",	KSTAT_DATA_UINT64 },
+	{ "l2_data_type",		KSTAT_DATA_UINT64 },
+	{ "l2_metadata_type",		KSTAT_DATA_UINT64 },
 	{ "l2_feeds",			KSTAT_DATA_UINT64 },
 	{ "l2_rw_clash",		KSTAT_DATA_UINT64 },
 	{ "l2_read_bytes",		KSTAT_DATA_UINT64 },
@@ -8209,9 +8211,15 @@ top:
 		    dev->l2ad_arcstate_cached[ARC_STATE_MFU]);
 		ARCSTAT_INCR(arcstat_l2_mfu_ghost_cached,
 		    dev->l2ad_arcstate_cached[ARC_STATE_MFU_GHOST]);
+
+		ARCSTAT_INCR(arcstat_l2_bufc_data,
+		    dev->l2ad_bufc[ARC_BUFC_DATA]);
+		ARCSTAT_INCR(arcstat_l2_bufc_metadata,
+		    dev->l2ad_bufc[ARC_BUFC_METADATA]);
 	}
 
 	bzero(dev->l2ad_arcstate_cached, sizeof (dev->l2ad_arcstate_cached));
+	bzero(dev->l2ad_bufc, sizeof (dev->l2ad_bufc));
 	atomic_inc_64(&l2arc_writes_done);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
@@ -9090,6 +9098,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			hdr->b_l2hdr.b_hits = 0;
 			dev->l2ad_arcstate_cached[
 			    hdr->b_l1hdr.b_state->arcs_state]++;
+			dev->l2ad_bufc[hdr->b_type]++;
 
 			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
 			arc_hdr_set_flags(hdr, ARC_FLAG_HAS_L2HDR);
@@ -10136,6 +10145,17 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 			break;
 		case ARC_STATE_MFU_GHOST:
 			ARCSTAT_BUMP(arcstat_l2_mfu_ghost_cached);
+			break;
+		default:
+			break;
+	}
+
+	switch (type) {
+		case ARC_BUFC_DATA:
+			ARCSTAT_BUMP(arcstat_l2_bufc_data);
+			break;
+		case ARC_BUFC_METADATA:
+			ARCSTAT_BUMP(arcstat_l2_bufc_metadata);
 			break;
 		default:
 			break;
