@@ -532,6 +532,10 @@ arc_stats_t arc_stats = {
 	{ "mfu_ghost_evictable_metadata", KSTAT_DATA_UINT64 },
 	{ "l2_hits",			KSTAT_DATA_UINT64 },
 	{ "l2_misses",			KSTAT_DATA_UINT64 },
+	{ "l2_mru_cached",		KSTAT_DATA_UINT64 },
+	{ "l2_mru_ghost_cached",	KSTAT_DATA_UINT64 },
+	{ "l2_mfu_cached",		KSTAT_DATA_UINT64 },
+	{ "l2_mfu_ghost_cached",	KSTAT_DATA_UINT64 },
 	{ "l2_feeds",			KSTAT_DATA_UINT64 },
 	{ "l2_rw_clash",		KSTAT_DATA_UINT64 },
 	{ "l2_read_bytes",		KSTAT_DATA_UINT64 },
@@ -8056,9 +8060,6 @@ l2arc_write_done(zio_t *zio)
 	DTRACE_PROBE2(l2arc__iodone, zio_t *, zio,
 	    l2arc_write_callback_t *, cb);
 
-	if (zio->io_error != 0)
-		ARCSTAT_BUMP(arcstat_l2_writes_error);
-
 	/*
 	 * All writes completed, or an error was hit.
 	 */
@@ -8171,6 +8172,8 @@ top:
 	list_destroy(&cb->l2wcb_abd_list);
 
 	if (zio->io_error != 0) {
+		ARCSTAT_BUMP(arcstat_l2_writes_error);
+
 		/*
 		 * Restore the lbps array in the header to its previous state.
 		 * If the list of log block pointers is empty, zero out the
@@ -8197,8 +8200,18 @@ top:
 			lb_ptr_buf = list_next(&dev->l2ad_lbptr_list,
 			    lb_ptr_buf);
 		}
+	} else {
+		ARCSTAT_INCR(arcstat_l2_mru_cached,
+		    dev->l2ad_arcstate_cached[ARC_STATE_MRU]);
+		ARCSTAT_INCR(arcstat_l2_mru_ghost_cached,
+		    dev->l2ad_arcstate_cached[ARC_STATE_MRU_GHOST]);
+		ARCSTAT_INCR(arcstat_l2_mfu_cached,
+		    dev->l2ad_arcstate_cached[ARC_STATE_MFU]);
+		ARCSTAT_INCR(arcstat_l2_mfu_ghost_cached,
+		    dev->l2ad_arcstate_cached[ARC_STATE_MFU_GHOST]);
 	}
 
+	bzero(dev->l2ad_arcstate_cached, sizeof (dev->l2ad_arcstate_cached));
 	atomic_inc_64(&l2arc_writes_done);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
@@ -9075,6 +9088,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 			hdr->b_l2hdr.b_dev = dev;
 			hdr->b_l2hdr.b_hits = 0;
+			dev->l2ad_arcstate_cached[
+			    hdr->b_l1hdr.b_state->arcs_state]++;
 
 			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
 			arc_hdr_set_flags(hdr, ARC_FLAG_HAS_L2HDR);

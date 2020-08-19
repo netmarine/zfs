@@ -350,8 +350,8 @@ typedef struct l2arc_lb_ptr_buf {
 #define	L2BLK_SET_TYPE(field, x)	BF64_SET((field), 48, 8, x)
 #define	L2BLK_GET_PROTECTED(field)	BF64_GET((field), 56, 1)
 #define	L2BLK_SET_PROTECTED(field, x)	BF64_SET((field), 56, 1, x)
-#define L2BLK_GET_STATE(field)		BF64_GET((field), 57, 4)
-#define L2BLK_SET_STATE(field, x)	BF64_SET((field), 57, 4, x)
+#define	L2BLK_GET_STATE(field)		BF64_GET((field), 57, 4)
+#define	L2BLK_SET_STATE(field, x)	BF64_SET((field), 57, 4, x)
 
 #define	PTR_SWAP(x, y)		\
 	do {			\
@@ -410,6 +410,10 @@ typedef struct l2arc_dev {
 	 */
 	zfs_refcount_t		l2ad_lb_count;
 	boolean_t		l2ad_trim_all; /* TRIM whole device */
+	/*
+	 * Counters ARC state of L2ARC upon caching.
+	 */
+	uint64_t		l2ad_arcstate_cached[ARC_STATE_NUMTYPES];
 } l2arc_dev_t;
 
 /*
@@ -746,6 +750,10 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_mfu_ghost_evictable_metadata;
 	kstat_named_t arcstat_l2_hits;
 	kstat_named_t arcstat_l2_misses;
+	kstat_named_t arcstat_l2_mru_cached;
+	kstat_named_t arcstat_l2_mru_ghost_cached;
+	kstat_named_t arcstat_l2_mfu_cached;
+	kstat_named_t arcstat_l2_mfu_ghost_cached;
 	kstat_named_t arcstat_l2_feeds;
 	kstat_named_t arcstat_l2_rw_clash;
 	kstat_named_t arcstat_l2_read_bytes;
