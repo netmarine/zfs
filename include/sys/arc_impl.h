@@ -411,14 +411,15 @@ typedef struct l2arc_dev {
 	zfs_refcount_t		l2ad_lb_count;
 	boolean_t		l2ad_trim_all; /* TRIM whole device */
 	/*
-	 * Used for temporarily storing ARC state counters of L2ARC buffers
-	 * upon caching.
+	 * Used for temporarily storing the aligned size per ARC state of L2ARC
+	 * buffers upon caching.
 	 */
-	uint64_t		l2ad_arcstate_cached[ARC_STATE_NUMTYPES];
+	uint64_t		l2ad_arcstate_asize[ARC_STATE_NUMTYPES];
 	/*
-	 * Used for temporarily storing the content type of L2ARC buffers.
+	 * Used for temporarily storing the aligned size per content type of
+	 * L2ARC buffers.
 	 */
-	uint64_t		l2ad_bufc[ARC_BUFC_NUMTYPES];
+	uint64_t		l2ad_bufc_asize[ARC_BUFC_NUMTYPES];
 } l2arc_dev_t;
 
 /*
@@ -755,12 +756,20 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_mfu_ghost_evictable_metadata;
 	kstat_named_t arcstat_l2_hits;
 	kstat_named_t arcstat_l2_misses;
-	kstat_named_t arcstat_l2_mru_cached;
-	kstat_named_t arcstat_l2_mru_ghost_cached;
-	kstat_named_t arcstat_l2_mfu_cached;
-	kstat_named_t arcstat_l2_mfu_ghost_cached;
-	kstat_named_t arcstat_l2_bufc_data;
-	kstat_named_t arcstat_l2_bufc_metadata;
+	/*
+	 * Aligned size (in bytes) of L2ARC cached buffers according to their
+	 * ARC state at the time of caching in L2ARC.
+	 */
+	kstat_named_t arcstat_l2_mru_asize;
+	kstat_named_t arcstat_l2_mru_ghost_asize;
+	kstat_named_t arcstat_l2_mfu_asize;
+	kstat_named_t arcstat_l2_mfu_ghost_asize;
+	/*
+	 * Aligned size (in bytes) of L2ARC cached buffers by buffer content
+	 * type.
+	 */
+	kstat_named_t arcstat_l2_bufc_data_asize;
+	kstat_named_t arcstat_l2_bufc_metadata_asize;
 	kstat_named_t arcstat_l2_feeds;
 	kstat_named_t arcstat_l2_rw_clash;
 	kstat_named_t arcstat_l2_read_bytes;

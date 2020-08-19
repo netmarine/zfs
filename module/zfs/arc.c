@@ -532,12 +532,12 @@ arc_stats_t arc_stats = {
 	{ "mfu_ghost_evictable_metadata", KSTAT_DATA_UINT64 },
 	{ "l2_hits",			KSTAT_DATA_UINT64 },
 	{ "l2_misses",			KSTAT_DATA_UINT64 },
-	{ "l2_mru_cached",		KSTAT_DATA_UINT64 },
-	{ "l2_mru_ghost_cached",	KSTAT_DATA_UINT64 },
-	{ "l2_mfu_cached",		KSTAT_DATA_UINT64 },
-	{ "l2_mfu_ghost_cached",	KSTAT_DATA_UINT64 },
-	{ "l2_data_type",		KSTAT_DATA_UINT64 },
-	{ "l2_metadata_type",		KSTAT_DATA_UINT64 },
+	{ "l2_mru_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_mru_ghost_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_mfu_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_mfu_ghost_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_bufc_data_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_bufc_metadata_asize",	KSTAT_DATA_UINT64 },
 	{ "l2_feeds",			KSTAT_DATA_UINT64 },
 	{ "l2_rw_clash",		KSTAT_DATA_UINT64 },
 	{ "l2_read_bytes",		KSTAT_DATA_UINT64 },
@@ -8203,23 +8203,23 @@ top:
 			    lb_ptr_buf);
 		}
 	} else {
-		ARCSTAT_INCR(arcstat_l2_mru_cached,
-		    dev->l2ad_arcstate_cached[ARC_STATE_MRU]);
-		ARCSTAT_INCR(arcstat_l2_mru_ghost_cached,
-		    dev->l2ad_arcstate_cached[ARC_STATE_MRU_GHOST]);
-		ARCSTAT_INCR(arcstat_l2_mfu_cached,
-		    dev->l2ad_arcstate_cached[ARC_STATE_MFU]);
-		ARCSTAT_INCR(arcstat_l2_mfu_ghost_cached,
-		    dev->l2ad_arcstate_cached[ARC_STATE_MFU_GHOST]);
+		ARCSTAT_INCR(arcstat_l2_mru_asize,
+		    dev->l2ad_arcstate_asize[ARC_STATE_MRU]);
+		ARCSTAT_INCR(arcstat_l2_mru_ghost_asize,
+		    dev->l2ad_arcstate_asize[ARC_STATE_MRU_GHOST]);
+		ARCSTAT_INCR(arcstat_l2_mfu_asize,
+		    dev->l2ad_arcstate_asize[ARC_STATE_MFU]);
+		ARCSTAT_INCR(arcstat_l2_mfu_ghost_asize,
+		    dev->l2ad_arcstate_asize[ARC_STATE_MFU_GHOST]);
 
-		ARCSTAT_INCR(arcstat_l2_bufc_data,
-		    dev->l2ad_bufc[ARC_BUFC_DATA]);
-		ARCSTAT_INCR(arcstat_l2_bufc_metadata,
-		    dev->l2ad_bufc[ARC_BUFC_METADATA]);
+		ARCSTAT_INCR(arcstat_l2_bufc_data_asize,
+		    dev->l2ad_bufc_asize[ARC_BUFC_DATA]);
+		ARCSTAT_INCR(arcstat_l2_bufc_metadata_asize,
+		    dev->l2ad_bufc_asize[ARC_BUFC_METADATA]);
 	}
 
-	bzero(dev->l2ad_arcstate_cached, sizeof (dev->l2ad_arcstate_cached));
-	bzero(dev->l2ad_bufc, sizeof (dev->l2ad_bufc));
+	bzero(dev->l2ad_arcstate_asize, sizeof (dev->l2ad_arcstate_asize));
+	bzero(dev->l2ad_bufc_asize, sizeof (dev->l2ad_bufc_asize));
 	atomic_inc_64(&l2arc_writes_done);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
@@ -9096,9 +9096,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 			hdr->b_l2hdr.b_dev = dev;
 			hdr->b_l2hdr.b_hits = 0;
-			dev->l2ad_arcstate_cached[
-			    hdr->b_l1hdr.b_state->arcs_state]++;
-			dev->l2ad_bufc[hdr->b_type]++;
+			dev->l2ad_arcstate_asize[
+			    hdr->b_l1hdr.b_state->arcs_state] += asize;
+			dev->l2ad_bufc_asize[hdr->b_type] += asize;
 
 			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
 			arc_hdr_set_flags(hdr, ARC_FLAG_HAS_L2HDR);
@@ -10135,16 +10135,16 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 
 	switch (state) {
 		case ARC_STATE_MRU:
-			ARCSTAT_BUMP(arcstat_l2_mru_cached);
+			ARCSTAT_INCR(arcstat_l2_mru_asize, asize);
 			break;
 		case ARC_STATE_MRU_GHOST:
-			ARCSTAT_BUMP(arcstat_l2_mru_ghost_cached);
+			ARCSTAT_INCR(arcstat_l2_mru_ghost_asize, asize);
 			break;
 		case ARC_STATE_MFU:
-			ARCSTAT_BUMP(arcstat_l2_mfu_cached);
+			ARCSTAT_INCR(arcstat_l2_mfu_asize, asize);
 			break;
 		case ARC_STATE_MFU_GHOST:
-			ARCSTAT_BUMP(arcstat_l2_mfu_ghost_cached);
+			ARCSTAT_INCR(arcstat_l2_mfu_ghost_asize, asize);
 			break;
 		default:
 			break;
@@ -10152,10 +10152,10 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 
 	switch (type) {
 		case ARC_BUFC_DATA:
-			ARCSTAT_BUMP(arcstat_l2_bufc_data);
+			ARCSTAT_INCR(arcstat_l2_bufc_data_asize, asize);
 			break;
 		case ARC_BUFC_METADATA:
-			ARCSTAT_BUMP(arcstat_l2_bufc_metadata);
+			ARCSTAT_INCR(arcstat_l2_bufc_metadata_asize, asize);
 			break;
 		default:
 			break;
