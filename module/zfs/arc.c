@@ -899,7 +899,7 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 static void l2arc_do_free_on_write(void);
-static void l2arc_hdr_space_update(arc_buf_hdr_t *hdr, boolean_t incr);
+static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr);
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
