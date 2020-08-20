@@ -3696,6 +3696,8 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 	l2arc_dev_t *dev = l2hdr->b_dev;
 	uint64_t psize = HDR_GET_PSIZE(hdr);
 	uint64_t asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
+	arc_buf_contents_t type = hdr->b_type;
+	uint8_t state = hdr->b_l1hdr.b_state->arcs_state;
 
 	ASSERT(MUTEX_HELD(&dev->l2ad_mtx));
 	ASSERT(HDR_HAS_L2HDR(hdr));
@@ -3704,6 +3706,34 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 
 	ARCSTAT_INCR(arcstat_l2_psize, -psize);
 	ARCSTAT_INCR(arcstat_l2_lsize, -HDR_GET_LSIZE(hdr));
+
+	switch (state) {
+		case ARC_STATE_MRU:
+			ARCSTAT_INCR(arcstat_l2_mru_asize, -asize);
+			break;
+		case ARC_STATE_MRU_GHOST:
+			ARCSTAT_INCR(arcstat_l2_mru_ghost_asize, -asize);
+			break;
+		case ARC_STATE_MFU:
+			ARCSTAT_INCR(arcstat_l2_mfu_asize, -asize);
+			break;
+		case ARC_STATE_MFU_GHOST:
+			ARCSTAT_INCR(arcstat_l2_mfu_ghost_asize, -asize);
+			break;
+		default:
+			break;
+	}
+
+	switch (type) {
+		case ARC_BUFC_DATA:
+			ARCSTAT_INCR(arcstat_l2_bufc_data_asize, -asize);
+			break;
+		case ARC_BUFC_METADATA:
+			ARCSTAT_INCR(arcstat_l2_bufc_metadata_asize, -asize);
+			break;
+		default:
+			break;
+	}
 
 	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
 
