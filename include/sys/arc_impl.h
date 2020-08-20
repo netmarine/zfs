@@ -410,16 +410,6 @@ typedef struct l2arc_dev {
 	 */
 	zfs_refcount_t		l2ad_lb_count;
 	boolean_t		l2ad_trim_all; /* TRIM whole device */
-	/*
-	 * Used for temporarily storing the aligned size per ARC state of L2ARC
-	 * buffers upon caching.
-	 */
-	uint64_t		l2ad_arcstate_asize[ARC_STATE_NUMTYPES];
-	/*
-	 * Used for temporarily storing the aligned size per content type of
-	 * L2ARC buffers.
-	 */
-	uint64_t		l2ad_bufc_asize[ARC_BUFC_NUMTYPES];
 } l2arc_dev_t;
 
 /*

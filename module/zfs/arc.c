@@ -8181,8 +8181,7 @@ top:
 			arc_hdr_clear_flags(hdr, ARC_FLAG_HAS_L2HDR);
 
 			uint64_t psize = HDR_GET_PSIZE(hdr);
-			ARCSTAT_INCR(arcstat_l2_psize, -psize);
-			ARCSTAT_INCR(arcstat_l2_lsize, -HDR_GET_LSIZE(hdr));
+			l2arc_hdr_arcstats_update(hdr, B_FALSE);
 
 			bytes_dropped +=
 			    vdev_psize_to_asize(dev->l2ad_vdev, psize);
@@ -8258,24 +8257,8 @@ top:
 			lb_ptr_buf = list_next(&dev->l2ad_lbptr_list,
 			    lb_ptr_buf);
 		}
-	} else {
-		ARCSTAT_INCR(arcstat_l2_mru_asize,
-		    dev->l2ad_arcstate_asize[ARC_STATE_MRU]);
-		ARCSTAT_INCR(arcstat_l2_mru_ghost_asize,
-		    dev->l2ad_arcstate_asize[ARC_STATE_MRU_GHOST]);
-		ARCSTAT_INCR(arcstat_l2_mfu_asize,
-		    dev->l2ad_arcstate_asize[ARC_STATE_MFU]);
-		ARCSTAT_INCR(arcstat_l2_mfu_ghost_asize,
-		    dev->l2ad_arcstate_asize[ARC_STATE_MFU_GHOST]);
-
-		ARCSTAT_INCR(arcstat_l2_bufc_data_asize,
-		    dev->l2ad_bufc_asize[ARC_BUFC_DATA]);
-		ARCSTAT_INCR(arcstat_l2_bufc_metadata_asize,
-		    dev->l2ad_bufc_asize[ARC_BUFC_METADATA]);
 	}
 
-	bzero(dev->l2ad_arcstate_asize, sizeof (dev->l2ad_arcstate_asize));
-	bzero(dev->l2ad_bufc_asize, sizeof (dev->l2ad_bufc_asize));
 	atomic_inc_64(&l2arc_writes_done);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
@@ -9152,9 +9135,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 			hdr->b_l2hdr.b_dev = dev;
 			hdr->b_l2hdr.b_hits = 0;
-			dev->l2ad_arcstate_asize[
-			    hdr->b_l1hdr.b_state->arcs_state] += asize;
-			dev->l2ad_bufc_asize[hdr->b_type] += asize;
 
 			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
 			arc_hdr_set_flags(hdr, ARC_FLAG_HAS_L2HDR);
@@ -9179,6 +9159,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			write_psize += psize;
 			write_asize += asize;
 			dev->l2ad_hand += asize;
+			l2arc_hdr_arcstats_update(hdr, B_TRUE);
 			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 			mutex_exit(hash_lock);
