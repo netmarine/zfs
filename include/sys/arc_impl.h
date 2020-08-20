@@ -448,6 +448,7 @@ typedef struct l2arc_buf_hdr {
 	uint64_t		b_daddr;	/* disk address, offset byte */
 	uint32_t		b_hits;
 	list_node_t		b_l2node;
+	arc_state_type_t	b_arcs_state;
 } l2arc_buf_hdr_t;
 
 typedef struct l2arc_write_callback {

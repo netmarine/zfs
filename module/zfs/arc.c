@@ -1733,7 +1733,7 @@ static arc_buf_hdr_t *
 arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
     dva_t dva, uint64_t daddr, int32_t psize, uint64_t birth,
     enum zio_compress compress, uint8_t complevel, boolean_t protected,
-    boolean_t prefetch)
+    boolean_t prefetch, arc_state_type_t arcs_state)
 {
 	arc_buf_hdr_t	*hdr;
 
@@ -1757,6 +1757,7 @@ arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
 
 	hdr->b_l2hdr.b_dev = dev;
 	hdr->b_l2hdr.b_daddr = daddr;
+	hdr->b_l2hdr.b_arcs_state = arcs_state;
 
 	return (hdr);
 }
@@ -3699,7 +3700,6 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
 	uint64_t psize = HDR_GET_PSIZE(hdr);
 	uint64_t asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
 	arc_buf_contents_t type = hdr->b_type;
-	uint8_t state = hdr->b_l1hdr.b_state->arcs_state;
 	int64_t lsize_s;
 	int64_t psize_s;
 	int64_t asize_s;
@@ -3717,7 +3717,7 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
 	ARCSTAT_INCR(arcstat_l2_psize, psize_s);
 	ARCSTAT_INCR(arcstat_l2_lsize, lsize_s);
 
-	switch (state) {
+	switch (hdr->b_l2hdr.b_arcs_state) {
 		case ARC_STATE_MRU:
 			ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
 			break;
@@ -9137,6 +9137,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			hdr->b_l2hdr.b_hits = 0;
 
 			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
+			hdr->b_l2hdr.b_arcs_state =
+			    hdr->b_l1hdr.b_state->arcs_state;
 			arc_hdr_set_flags(hdr, ARC_FLAG_HAS_L2HDR);
 
 			mutex_enter(&dev->l2ad_mtx);
@@ -10144,7 +10146,6 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	kmutex_t		*hash_lock;
 	arc_buf_contents_t	type = L2BLK_GET_TYPE((le)->le_prop);
 	uint64_t		asize;
-	uint8_t			state;
 
 	/*
 	 * Do all the allocation before grabbing any locks, this lets us
@@ -10156,10 +10157,10 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	    L2BLK_GET_PSIZE((le)->le_prop), le->le_birth,
 	    L2BLK_GET_COMPRESS((le)->le_prop), le->le_complevel,
 	    L2BLK_GET_PROTECTED((le)->le_prop),
-	    L2BLK_GET_PREFETCH((le)->le_prop));
+	    L2BLK_GET_PREFETCH((le)->le_prop),
+	    L2BLK_GET_STATE((le)->le_prop));
 	asize = vdev_psize_to_asize(dev->l2ad_vdev,
 	    L2BLK_GET_PSIZE((le)->le_prop));
-	state = L2BLK_GET_STATE((le)->le_prop);
 
 	/*
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
@@ -10187,6 +10188,8 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 			arc_hdr_set_flags(exists, ARC_FLAG_HAS_L2HDR);
 			exists->b_l2hdr.b_dev = dev;
 			exists->b_l2hdr.b_daddr = le->le_daddr;
+			exists->b_l2hdr.b_arcs_state =
+			    L2BLK_GET_STATE((le)->le_prop);
 			mutex_enter(&dev->l2ad_mtx);
 			list_insert_tail(&dev->l2ad_buflist, exists);
 			(void) zfs_refcount_add_many(&dev->l2ad_alloc,
