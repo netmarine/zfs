@@ -3691,7 +3691,7 @@ arc_alloc_raw_buf(spa_t *spa, void *tag, uint64_t dsobj, boolean_t byteorder,
 }
 
 static void
-l2arc_hdr_space_update(arc_buf_hdr_t *hdr, boolean_t incr)
+l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
 {
 	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
 	l2arc_dev_t *dev = l2hdr->b_dev;
@@ -3744,23 +3744,24 @@ l2arc_hdr_space_update(arc_buf_hdr_t *hdr, boolean_t incr)
 		default:
 			break;
 	}
-
-	vdev_space_update(dev->l2ad_vdev, asize_s, 0, 0);
-
 }
+
 
 static void
 arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 {
 	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
 	l2arc_dev_t *dev = l2hdr->b_dev;
+	uint64_t psize = HDR_GET_PSIZE(hdr);
+	uint64_t asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
 
 	ASSERT(MUTEX_HELD(&dev->l2ad_mtx));
 	ASSERT(HDR_HAS_L2HDR(hdr));
 
 	list_remove(&dev->l2ad_buflist, hdr);
 
-	l2arc_hdr_space_update(hdr, B_FALSE);
+	l2arc_hdr_arcstats_update(hdr, B_FALSE);
+	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
 
 	(void) zfs_refcount_remove_many(&dev->l2ad_alloc, arc_hdr_size(hdr),
 	    hdr);
@@ -10180,11 +10181,11 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	state = L2BLK_GET_STATE((le)->le_prop);
 
 	/*
-	 * l2arc_hdr_space_update() calls vdev_space_update() so it has to be
-	 * called before arc_hdr_destroy() to avoid underflow since the
-	 * latter also calls vdev_space_update().
+	 * vdev_space_update() has to be called before arc_hdr_destroy() to
+	 * avoid underflow since the latter also calls vdev_space_update().
 	 */
-	l2arc_hdr_space_update(hdr, B_TRUE);
+	l2arc_hdr_arcstats_update(hdr, B_TRUE);
+	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	mutex_enter(&dev->l2ad_mtx);
 	list_insert_tail(&dev->l2ad_buflist, hdr);
@@ -10210,7 +10211,8 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 			(void) zfs_refcount_add_many(&dev->l2ad_alloc,
 			    arc_hdr_size(exists), exists);
 			mutex_exit(&dev->l2ad_mtx);
-			l2arc_hdr_space_update(exists, B_TRUE);
+			l2arc_hdr_arcstats_update(exists, B_TRUE);
+			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 		}
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
 	}
