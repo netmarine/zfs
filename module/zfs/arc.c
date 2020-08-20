@@ -3717,6 +3717,12 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
 	ARCSTAT_INCR(arcstat_l2_psize, psize_s);
 	ARCSTAT_INCR(arcstat_l2_lsize, lsize_s);
 
+	/*
+	 * We use the value stored in the L2 header upon initial caching in
+	 * L2ARC. This is because we are interested in the state of the buffer
+	 * in ARC when it was cached in L2ARC for the first time. This also
+	 * solves the problem of a possibly absent L1 header.
+	 */
 	switch (hdr->b_l2hdr.b_arcs_state) {
 		case ARC_STATE_MRU:
 			ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
