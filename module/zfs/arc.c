@@ -899,7 +899,8 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 static void l2arc_do_free_on_write(void);
-static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr);
+static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
+    boolean_t state_only);
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
@@ -3692,7 +3693,8 @@ arc_alloc_raw_buf(spa_t *spa, void *tag, uint64_t dsobj, boolean_t byteorder,
 }
 
 static void
-l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
+l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
+    boolean_t state_only)
 {
 	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
 	l2arc_dev_t *dev = l2hdr->b_dev;
@@ -3740,6 +3742,9 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr)
 			break;
 	}
 
+	if (state_only)
+		return;
+
 	switch (type) {
 		case ARC_BUFC_DATA:
 			ARCSTAT_INCR(arcstat_l2_bufc_data_asize, asize_s);
@@ -3766,7 +3771,7 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 
 	list_remove(&dev->l2ad_buflist, hdr);
 
-	l2arc_hdr_arcstats_update(hdr, B_FALSE);
+	l2arc_hdr_arcstats_update(hdr, B_FALSE, B_FALSE);
 	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
 
 	(void) zfs_refcount_remove_many(&dev->l2ad_alloc, arc_hdr_size(hdr),
@@ -5427,7 +5432,23 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 			 */
 			hdr->b_l1hdr.b_arc_access = now;
 			DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
+			/*
+			 * Decrement the L2 arcstats while the buffer is still
+			 * in MRU state.
+			 */
+			if (HDR_HAS_L2HDR(hdr))
+				l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+
 			arc_change_state(arc_mfu, hdr, hash_lock);
+
+			/*
+			 * The new state is MFU so increment the L2
+			 * arcstats.
+			 */
+			if (HDR_HAS_L2HDR(hdr)) {
+				hdr->b_l2hdr.b_arcs_state = ARC_STATE_MFU;
+				l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+			}
 		}
 		atomic_inc_32(&hdr->b_l1hdr.b_mru_hits);
 		ARCSTAT_BUMP(arcstat_mru_hits);
@@ -8187,7 +8208,7 @@ top:
 			arc_hdr_clear_flags(hdr, ARC_FLAG_HAS_L2HDR);
 
 			uint64_t psize = HDR_GET_PSIZE(hdr);
-			l2arc_hdr_arcstats_update(hdr, B_FALSE);
+			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_FALSE);
 
 			bytes_dropped +=
 			    vdev_psize_to_asize(dev->l2ad_vdev, psize);
@@ -9167,7 +9188,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			write_psize += psize;
 			write_asize += asize;
 			dev->l2ad_hand += asize;
-			l2arc_hdr_arcstats_update(hdr, B_TRUE);
+			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_FALSE);
 			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 			mutex_exit(hash_lock);
@@ -10172,7 +10193,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
 	 * avoid underflow since the latter also calls vdev_space_update().
 	 */
-	l2arc_hdr_arcstats_update(hdr, B_TRUE);
+	l2arc_hdr_arcstats_update(hdr, B_TRUE, B_FALSE);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	mutex_enter(&dev->l2ad_mtx);
@@ -10201,7 +10222,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 			(void) zfs_refcount_add_many(&dev->l2ad_alloc,
 			    arc_hdr_size(exists), exists);
 			mutex_exit(&dev->l2ad_mtx);
-			l2arc_hdr_arcstats_update(exists, B_TRUE);
+			l2arc_hdr_arcstats_update(exists, B_TRUE, B_FALSE);
 			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 		}
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
