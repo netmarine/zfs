@@ -3718,9 +3718,11 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 
 	/*
 	 * We use the value stored in the L2 header upon initial caching in
-	 * L2ARC. This is because we are interested in the state of the buffer
-	 * in ARC when it was cached in L2ARC for the first time. This also
-	 * solves the problem of a possibly absent L1 header.
+	 * L2ARC. This value will be updated in case an MRU/MRU_ghost buffer
+	 * transitions to MFU but the L2ARC metadata (log entry) cannot
+	 * currently be updated. Having the ARC state in the L2 header solves
+	 * the problem of a possibly absent L1 header (apparent in buffers
+	 * restored from persistent L2ARC).
 	 */
 	switch (hdr->b_l2hdr.b_arcs_state) {
 		case ARC_STATE_MRU:
