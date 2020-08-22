@@ -9252,8 +9252,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	ASSERT3U(write_asize, <=, target_sz);
 	ARCSTAT_BUMP(arcstat_l2_writes_sent);
 	ARCSTAT_INCR(arcstat_l2_write_bytes, write_psize);
-	ARCSTAT_INCR(arcstat_l2_lsize, write_lsize);
-	ARCSTAT_INCR(arcstat_l2_psize, write_psize);
 
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
