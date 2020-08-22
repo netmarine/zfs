@@ -3723,11 +3723,9 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	 * restored from persistent L2ARC).
 	 */
 	switch (hdr->b_l2hdr.b_arcs_state) {
-		case ARC_STATE_MRU_GHOST:
 		case ARC_STATE_MRU:
 			ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
 			break;
-		case ARC_STATE_MFU_GHOST:
 		case ARC_STATE_MFU:
 			ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
 			break;
@@ -5454,12 +5452,9 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		 * This buffer has been "accessed" recently, but
 		 * was evicted from the cache.  Move it to the
 		 * MFU state.
-		 */
-
-		/*
 		 * If there is an L2 header, it has stored in b_arcs_state the
-		 * ARC state when the buffer was initially cached in L2ARC.
-		 * Decrement the ARC state related L2 arcstats.
+		 * ARC state when the buffer was initially cached in L2ARC,
+		 * so MRU. Decrement the ARC state related L2 arcstats.
 		 */
 		if (HDR_HAS_L2HDR(hdr))
 			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
