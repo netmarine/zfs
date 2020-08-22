@@ -5460,6 +5460,14 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		 * MFU state.
 		 */
 
+		/*
+		 * If there is an L2 header, it has stored in b_arcs_state the
+		 * ARC state when the buffer was initially cached in L2ARC.
+		 * Decrement the ARC state related L2 arcstats.
+		 */
+		if (HDR_HAS_L2HDR(hdr))
+			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+
 		if (HDR_PREFETCH(hdr) || HDR_PRESCIENT_PREFETCH(hdr)) {
 			new_state = arc_mru;
 			if (zfs_refcount_count(&hdr->b_l1hdr.b_refcnt) > 0) {
@@ -5475,6 +5483,15 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		arc_change_state(new_state, hdr, hash_lock);
+
+		/*
+		 * Update the L2 header with the new arcstate and increment the
+		 * ARC state related L2 arcstats.
+		 */
+		if (HDR_HAS_L2HDR(hdr)) {
+			hdr->b_l2hdr.b_arcs_state = new_state->arcs_state;
+			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+		}
 
 		atomic_inc_32(&hdr->b_l1hdr.b_mru_ghost_hits);
 		ARCSTAT_BUMP(arcstat_mru_ghost_hits);
