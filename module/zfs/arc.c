@@ -533,9 +533,7 @@ arc_stats_t arc_stats = {
 	{ "l2_hits",			KSTAT_DATA_UINT64 },
 	{ "l2_misses",			KSTAT_DATA_UINT64 },
 	{ "l2_mru_asize",		KSTAT_DATA_UINT64 },
-	{ "l2_mru_ghost_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_mfu_asize",		KSTAT_DATA_UINT64 },
-	{ "l2_mfu_ghost_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_bufc_data_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_bufc_metadata_asize",	KSTAT_DATA_UINT64 },
 	{ "l2_feeds",			KSTAT_DATA_UINT64 },
@@ -3725,17 +3723,13 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	 * restored from persistent L2ARC).
 	 */
 	switch (hdr->b_l2hdr.b_arcs_state) {
+		case ARC_STATE_MRU_GHOST:
 		case ARC_STATE_MRU:
 			ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
 			break;
-		case ARC_STATE_MRU_GHOST:
-			ARCSTAT_INCR(arcstat_l2_mru_ghost_asize, asize_s);
-			break;
+		case ARC_STATE_MFU_GHOST:
 		case ARC_STATE_MFU:
 			ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
-			break;
-		case ARC_STATE_MFU_GHOST:
-			ARCSTAT_INCR(arcstat_l2_mfu_ghost_asize, asize_s);
 			break;
 		default:
 			break;
