@@ -3716,9 +3716,6 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 		asize_s = asize;
 	}
 
-	ARCSTAT_INCR(arcstat_l2_psize, psize_s);
-	ARCSTAT_INCR(arcstat_l2_lsize, lsize_s);
-
 	/*
 	 * We use the value stored in the L2 header upon initial caching in
 	 * L2ARC. This is because we are interested in the state of the buffer
@@ -3744,6 +3741,9 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 
 	if (state_only)
 		return;
+
+	ARCSTAT_INCR(arcstat_l2_psize, psize_s);
+	ARCSTAT_INCR(arcstat_l2_lsize, lsize_s);
 
 	switch (type) {
 		case ARC_BUFC_DATA:
@@ -5521,7 +5521,20 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
+		/*
+		 * The L2 header has stored in b_arcs_state the ARC
+		 * state when the buffer was initially cached in L2ARC.
+		 * Decrement the ARC state related L2 arcstats.
+		 */
+		l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+
 		arc_change_state(arc_mfu, hdr, hash_lock);
+
+		/* Update the L2 header with the new arcstate. */
+		hdr->b_l2hdr.b_arcs_state = ARC_STATE_MFU;
+
+		/* Update the ARC state related L2 arcstats. */
+		l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
 	} else {
 		cmn_err(CE_PANIC, "invalid arc state 0x%p",
 		    hdr->b_l1hdr.b_state);
