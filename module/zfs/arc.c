@@ -532,6 +532,7 @@ arc_stats_t arc_stats = {
 	{ "mfu_ghost_evictable_metadata", KSTAT_DATA_UINT64 },
 	{ "l2_hits",			KSTAT_DATA_UINT64 },
 	{ "l2_misses",			KSTAT_DATA_UINT64 },
+	{ "l2_prefetch_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_mru_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_mfu_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_bufc_data_asize",		KSTAT_DATA_UINT64 },
@@ -3714,23 +3715,28 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 		asize_s = asize;
 	}
 
-	/*
-	 * We use the value stored in the L2 header upon initial caching in
-	 * L2ARC. This value will be updated in case an MRU/MRU_ghost buffer
-	 * transitions to MFU but the L2ARC metadata (log entry) cannot
-	 * currently be updated. Having the ARC state in the L2 header solves
-	 * the problem of a possibly absent L1 header (apparent in buffers
-	 * restored from persistent L2ARC).
-	 */
-	switch (hdr->b_l2hdr.b_arcs_state) {
-		case ARC_STATE_MRU:
-			ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
-			break;
-		case ARC_STATE_MFU:
-			ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
-			break;
-		default:
-			break;
+	/* If the buffer is a prefetch, count it as such. */
+	if (HDR_PREFETCH(hdr)) {
+		ARCSTAT_INCR(arcstat_l2_prefetch_asize, asize_s);
+	} else {
+		/*
+		 * We use the value stored in the L2 header upon initial caching in
+		 * L2ARC. This value will be updated in case an MRU/MRU_ghost buffer
+		 * transitions to MFU but the L2ARC metadata (log entry) cannot
+		 * currently be updated. Having the ARC state in the L2 header solves
+		 * the problem of a possibly absent L1 header (apparent in buffers
+		 * restored from persistent L2ARC).
+		 */
+		switch (hdr->b_l2hdr.b_arcs_state) {
+			case ARC_STATE_MRU:
+				ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
+				break;
+			case ARC_STATE_MFU:
+				ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
+				break;
+			default:
+				break;
+		}
 	}
 
 	if (state_only)
@@ -5402,11 +5408,17 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 				ASSERT(multilist_link_active(
 				    &hdr->b_l1hdr.b_arc_node));
 			} else {
+				if (HDR_HAS_L2HDR(hdr))
+					l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+
 				arc_hdr_clear_flags(hdr,
 				    ARC_FLAG_PREFETCH |
 				    ARC_FLAG_PRESCIENT_PREFETCH);
 				atomic_inc_32(&hdr->b_l1hdr.b_mru_hits);
 				ARCSTAT_BUMP(arcstat_mru_hits);
+
+				if (HDR_HAS_L2HDR(hdr))
+					l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
 			}
 			hdr->b_l1hdr.b_arc_access = now;
 			return;
@@ -5529,13 +5541,8 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
-		/*
-		 * The L2 header has stored in b_arcs_state the ARC
-		 * state when the buffer was initially cached in L2ARC.
-		 * Decrement the ARC state related L2 arcstats.
-		 */
-		l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
 
+		l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
 		arc_change_state(arc_mfu, hdr, hash_lock);
 
 		/* Update the L2 header with the new arcstate. */

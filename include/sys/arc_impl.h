@@ -750,6 +750,7 @@ typedef struct arc_stats {
 	/*
 	 * Aligned size (in bytes) of L2ARC cached buffers by ARC state.
 	 */
+	kstat_named_t arcstat_l2_prefetch_asize;
 	kstat_named_t arcstat_l2_mru_asize;
 	kstat_named_t arcstat_l2_mfu_asize;
 	/*
