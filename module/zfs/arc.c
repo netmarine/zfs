@@ -2319,7 +2319,11 @@ add_reference(arc_buf_hdr_t *hdr, void *tag)
 			arc_evictable_space_decrement(hdr, state);
 		}
 		/* remove the prefetch flag if we get a reference */
+		if (HDR_HAS_L2HDR(hdr))
+			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
 		arc_hdr_clear_flags(hdr, ARC_FLAG_PREFETCH);
+		if (HDR_HAS_L2HDR(hdr))
+			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
 	}
 }
 
@@ -2602,8 +2606,15 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 		}
 	}
 
-	if (HDR_HAS_L1HDR(hdr))
+	if (HDR_HAS_L1HDR(hdr)) {
 		hdr->b_l1hdr.b_state = new_state;
+
+		if (HDR_HAS_L2HDR(hdr) && new_state != arc_l2c_only) {
+			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+			hdr->b_l2hdr.b_arcs_state = new_state->arcs_state;
+			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+		}
+	}
 
 	/*
 	 * L2 headers should never be on the L2 state list since they don't
@@ -3720,17 +3731,20 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 		ARCSTAT_INCR(arcstat_l2_prefetch_asize, asize_s);
 	} else {
 		/*
-		 * We use the value stored in the L2 header upon initial caching in
-		 * L2ARC. This value will be updated in case an MRU/MRU_ghost buffer
-		 * transitions to MFU but the L2ARC metadata (log entry) cannot
-		 * currently be updated. Having the ARC state in the L2 header solves
-		 * the problem of a possibly absent L1 header (apparent in buffers
-		 * restored from persistent L2ARC).
+		 * We use the value stored in the L2 header upon initial
+		 * caching in L2ARC. This value will be updated in case
+		 * an MRU/MRU_ghost buffer transitions to MFU but the L2ARC
+		 * metadata (log entry) cannot currently be updated. Having
+		 * the ARC state in the L2 header solves the problem of a
+		 * possibly absent L1 header (apparent in buffers restored
+		 * from persistent L2ARC).
 		 */
 		switch (hdr->b_l2hdr.b_arcs_state) {
+			case ARC_STATE_MRU_GHOST:
 			case ARC_STATE_MRU:
 				ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
 				break;
+			case ARC_STATE_MFU_GHOST:
 			case ARC_STATE_MFU:
 				ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
 				break;
@@ -5409,16 +5423,16 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 				    &hdr->b_l1hdr.b_arc_node));
 			} else {
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
-
+					l2arc_hdr_arcstats_update(hdr, B_FALSE,
+					    B_TRUE);
 				arc_hdr_clear_flags(hdr,
 				    ARC_FLAG_PREFETCH |
 				    ARC_FLAG_PRESCIENT_PREFETCH);
 				atomic_inc_32(&hdr->b_l1hdr.b_mru_hits);
 				ARCSTAT_BUMP(arcstat_mru_hits);
-
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+					l2arc_hdr_arcstats_update(hdr, B_TRUE,
+					    B_TRUE);
 			}
 			hdr->b_l1hdr.b_arc_access = now;
 			return;
@@ -5438,23 +5452,7 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 			 */
 			hdr->b_l1hdr.b_arc_access = now;
 			DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
-			/*
-			 * Decrement the L2 arcstats while the buffer is still
-			 * in MRU state.
-			 */
-			if (HDR_HAS_L2HDR(hdr))
-				l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
-
 			arc_change_state(arc_mfu, hdr, hash_lock);
-
-			/*
-			 * The new state is MFU so increment the L2
-			 * arcstats.
-			 */
-			if (HDR_HAS_L2HDR(hdr)) {
-				hdr->b_l2hdr.b_arcs_state = ARC_STATE_MFU;
-				l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
-			}
 		}
 		atomic_inc_32(&hdr->b_l1hdr.b_mru_hits);
 		ARCSTAT_BUMP(arcstat_mru_hits);
@@ -5464,19 +5462,19 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		 * This buffer has been "accessed" recently, but
 		 * was evicted from the cache.  Move it to the
 		 * MFU state.
-		 * If there is an L2 header, it has stored in b_arcs_state the
-		 * ARC state when the buffer was initially cached in L2ARC,
-		 * so MRU. Decrement the ARC state related L2 arcstats.
 		 */
-		if (HDR_HAS_L2HDR(hdr))
-			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
-
 		if (HDR_PREFETCH(hdr) || HDR_PRESCIENT_PREFETCH(hdr)) {
 			new_state = arc_mru;
 			if (zfs_refcount_count(&hdr->b_l1hdr.b_refcnt) > 0) {
+				if (HDR_HAS_L2HDR(hdr))
+					l2arc_hdr_arcstats_update(hdr, B_FALSE,
+					    B_TRUE);
 				arc_hdr_clear_flags(hdr,
 				    ARC_FLAG_PREFETCH |
 				    ARC_FLAG_PRESCIENT_PREFETCH);
+				if (HDR_HAS_L2HDR(hdr))
+					l2arc_hdr_arcstats_update(hdr, B_TRUE,
+					    B_TRUE);
 			}
 			DTRACE_PROBE1(new_state__mru, arc_buf_hdr_t *, hdr);
 		} else {
@@ -5486,15 +5484,6 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		arc_change_state(new_state, hdr, hash_lock);
-
-		/*
-		 * Update the L2 header with the new arcstate and increment the
-		 * ARC state related L2 arcstats.
-		 */
-		if (HDR_HAS_L2HDR(hdr)) {
-			hdr->b_l2hdr.b_arcs_state = new_state->arcs_state;
-			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
-		}
 
 		atomic_inc_32(&hdr->b_l1hdr.b_mru_ghost_hits);
 		ARCSTAT_BUMP(arcstat_mru_ghost_hits);
@@ -5542,14 +5531,7 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
 
-		l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
 		arc_change_state(arc_mfu, hdr, hash_lock);
-
-		/* Update the L2 header with the new arcstate. */
-		hdr->b_l2hdr.b_arcs_state = ARC_STATE_MFU;
-
-		/* Update the ARC state related L2 arcstats. */
-		l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
 	} else {
 		cmn_err(CE_PANIC, "invalid arc state 0x%p",
 		    hdr->b_l1hdr.b_state);
@@ -5721,8 +5703,6 @@ arc_read_done(zio_t *zio)
 	}
 
 	arc_hdr_clear_flags(hdr, ARC_FLAG_L2_EVICTED);
-	if (l2arc_noprefetch && HDR_PREFETCH(hdr))
-		arc_hdr_clear_flags(hdr, ARC_FLAG_L2CACHE);
 
 	callback_list = hdr->b_l1hdr.b_acb;
 	ASSERT3P(callback_list, !=, NULL);
@@ -6068,7 +6048,8 @@ top:
 			ASSERT((zio_flags & ZIO_FLAG_SPECULATIVE) ||
 			    rc != EACCES);
 		} else if (*arc_flags & ARC_FLAG_PREFETCH &&
-		    zfs_refcount_count(&hdr->b_l1hdr.b_refcnt) == 0) {
+		    !HDR_HAS_L2HDR(hdr) &&
+		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 		}
 		DTRACE_PROBE1(arc__hit, arc_buf_hdr_t *, hdr);
@@ -6212,7 +6193,7 @@ top:
 				zio_flags |= ZIO_FLAG_RAW_ENCRYPT;
 		}
 
-		if (*arc_flags & ARC_FLAG_PREFETCH &&
+		if (*arc_flags & ARC_FLAG_PREFETCH && !HDR_HAS_L2HDR(hdr) &&
 		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt))
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 		if (*arc_flags & ARC_FLAG_PRESCIENT_PREFETCH)
@@ -7982,7 +7963,8 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 	 * 4. is flagged not eligible (zfs property).
 	 */
 	if (hdr->b_spa != spa_guid || HDR_HAS_L2HDR(hdr) ||
-	    HDR_IO_IN_PROGRESS(hdr) || !HDR_L2CACHE(hdr))
+	    HDR_IO_IN_PROGRESS(hdr) || !HDR_L2CACHE(hdr) ||
+	    (l2arc_noprefetch && HDR_PREFETCH(hdr)))
 		return (B_FALSE);
 
 	return (B_TRUE);
