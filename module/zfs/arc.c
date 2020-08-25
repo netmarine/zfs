@@ -6065,9 +6065,14 @@ top:
 			ASSERT((zio_flags & ZIO_FLAG_SPECULATIVE) ||
 			    rc != EACCES);
 		} else if (*arc_flags & ARC_FLAG_PREFETCH &&
-		    !HDR_HAS_L2HDR(hdr) &&
 		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
+			if (HDR_HAS_L2HDR(hdr))
+				l2arc_hdr_arcstats_update(hdr, B_FALSE,
+				    B_TRUE);
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
+			if (HDR_HAS_L2HDR(hdr))
+				l2arc_hdr_arcstats_update(hdr, B_TRUE,
+				    B_TRUE);
 		}
 		DTRACE_PROBE1(arc__hit, arc_buf_hdr_t *, hdr);
 		arc_access(hdr, hash_lock);
@@ -6210,9 +6215,14 @@ top:
 				zio_flags |= ZIO_FLAG_RAW_ENCRYPT;
 		}
 
-		if (*arc_flags & ARC_FLAG_PREFETCH && !HDR_HAS_L2HDR(hdr) &&
-		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt))
+		if (*arc_flags & ARC_FLAG_PREFETCH &&
+		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
+			if (HDR_HAS_L2HDR(hdr))
+				l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
+			if (HDR_HAS_L2HDR(hdr))
+				l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+		}
 		if (*arc_flags & ARC_FLAG_PRESCIENT_PREFETCH)
 			arc_hdr_set_flags(hdr, ARC_FLAG_PRESCIENT_PREFETCH);
 		if (*arc_flags & ARC_FLAG_L2CACHE)
