@@ -549,6 +549,8 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_evict_not_enough;
 	kstat_named_t arcstat_evict_l2_cached;
 	kstat_named_t arcstat_evict_l2_eligible;
+	kstat_named_t arcstat_evict_l2_eligible_mfu;
+	kstat_named_t arcstat_evict_l2_eligible_mru;
 	kstat_named_t arcstat_evict_l2_ineligible;
 	kstat_named_t arcstat_evict_l2_skip;
 	kstat_named_t arcstat_hash_elements;

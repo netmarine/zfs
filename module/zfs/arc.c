@@ -491,6 +491,8 @@ arc_stats_t arc_stats = {
 	{ "evict_not_enough",		KSTAT_DATA_UINT64 },
 	{ "evict_l2_cached",		KSTAT_DATA_UINT64 },
 	{ "evict_l2_eligible",		KSTAT_DATA_UINT64 },
+	{ "evict_l2_eligible_mfu",	KSTAT_DATA_UINT64 },
+	{ "evict_l2_eligible_mru",	KSTAT_DATA_UINT64 },
 	{ "evict_l2_ineligible",	KSTAT_DATA_UINT64 },
 	{ "evict_l2_skip",		KSTAT_DATA_UINT64 },
 	{ "hash_elements",		KSTAT_DATA_UINT64 },
@@ -3989,6 +3991,21 @@ arc_evict_hdr(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		if (l2arc_write_eligible(hdr->b_spa, hdr)) {
 			ARCSTAT_INCR(arcstat_evict_l2_eligible,
 			    HDR_GET_LSIZE(hdr));
+
+			switch (state->arcs_state) {
+				case ARC_STATE_MRU:
+					ARCSTAT_INCR(
+					    arcstat_evict_l2_eligible_mru,
+					    HDR_GET_LSIZE(hdr));
+					break;
+				case ARC_STATE_MFU:
+					ARCSTAT_INCR(
+					    arcstat_evict_l2_eligible_mfu,
+					    HDR_GET_LSIZE(hdr));
+					break;
+				default:
+					break;
+			}
 		} else {
 			ARCSTAT_INCR(arcstat_evict_l2_ineligible,
 			    HDR_GET_LSIZE(hdr));
