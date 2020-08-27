@@ -5547,7 +5547,6 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 
 		hdr->b_l1hdr.b_arc_access = ddi_get_lbolt();
 		DTRACE_PROBE1(new_state__mfu, arc_buf_hdr_t *, hdr);
-
 		arc_change_state(arc_mfu, hdr, hash_lock);
 	} else {
 		cmn_err(CE_PANIC, "invalid arc state 0x%p",
