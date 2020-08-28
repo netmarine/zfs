@@ -35,7 +35,7 @@
 #	5. Import pool.
 #	6. Read random read for 30 sec.
 #	7. Read l2arc_mfu_asize and l2arc_mru_asize
-#	8. Verify that L2ARC MFU increased and L2ARC MRU decreased.
+#	8. Verify that L2ARC MFU increased and MFU+MRU = L2_asize.
 #
 
 verify_runnable "global"
@@ -80,9 +80,11 @@ log_must zpool import -d $VDIR $TESTPOOL
 log_must fio $FIO_SCRIPTS/random_reads.fio
 typeset l2_mfu_end=$(get_arcstat l2_mfu_asize)
 typeset l2_mru_end=$(get_arcstat l2_mru_asize)
+typeset l2_asize=$(get_arcstat l2_asize)
 
 log_must test $(( $l2_mfu_end - $l2_mfu_init )) -gt 0
-log_must test $(( $l2_mru_end - $l2_mru_init )) -lt 0
+log_must test $(( $l2_mru_end + $l2_mfu_end - $l2_asize )) -eq 0
+log_must test $(( $l2_mru_init + $l2_mfu_init - $l2_asize )) -eq 0
 
 log_must zpool destroy -f $TESTPOOL
 
