@@ -677,6 +677,11 @@ def get_l2arc_summary(Kstat):
     l2_writes_done = Kstat["kstat.zfs.misc.arcstats.l2_writes_done"]
     l2_writes_error = Kstat["kstat.zfs.misc.arcstats.l2_writes_error"]
     l2_writes_sent = Kstat["kstat.zfs.misc.arcstats.l2_writes_sent"]
+    l2_mfu_asize = Kstat["kstat.zfs.misc.arcstats.l2_mfu_asize"]
+    l2_mru_asize = Kstat["kstat.zfs.misc.arcstats.l2_mru_asize"]
+    l2_prefetch_asize = Kstat["kstat.zfs.misc.arcstats.l2_prefetch_asize"]
+    l2_bufc_data_asize = Kstat["kstat.zfs.misc.arcstats.l2_bufc_data_asize"]
+    l2_bufc_metadata_asize = Kstat["kstat.zfs.misc.arcstats.l2_bufc_metadata_asize"]
 
     l2_access_total = (l2_hits + l2_misses)
     output['l2_health_count'] = (l2_writes_error + l2_cksum_bad + l2_io_error)
@@ -699,7 +704,7 @@ def get_l2arc_summary(Kstat):
         output["io_errors"] = fHits(l2_io_error)
 
         output["l2_arc_size"] = {}
-        output["l2_arc_size"]["adative"] = fBytes(l2_size)
+        output["l2_arc_size"]["adaptive"] = fBytes(l2_size)
         output["l2_arc_size"]["actual"] = {
             'per': fPerc(l2_asize, l2_size),
             'num': fBytes(l2_asize)
@@ -707,6 +712,26 @@ def get_l2arc_summary(Kstat):
         output["l2_arc_size"]["head_size"] = {
             'per': fPerc(l2_hdr_size, l2_size),
             'num': fBytes(l2_hdr_size),
+        }
+        output["l2_arc_size"]["mfu_asize"] = {
+            'per': fPerc(l2_mfu_asize, l2_asize),
+            'num': fBytes(l2_mfu_asize),
+        }
+        output["l2_arc_size"]["mru_asize"] = {
+            'per': fPerc(l2_mru_asize, l2_asize),
+            'num': fBytes(l2_mru_asize),
+        }
+        output["l2_arc_size"]["prefetch_asize"] = {
+            'per': fPerc(l2_prefetch_asize, l2_asize),
+            'num': fBytes(l2_prefetch_asize),
+        }
+        output["l2_arc_size"]["bufc_data_asize"] = {
+            'per': fPerc(l2_bufc_data_asize, l2_asize),
+            'num': fBytes(l2_bufc_data_asize),
+        }
+        output["l2_arc_size"]["bufc_metadata_asize"] = {
+            'per': fPerc(l2_bufc_metadata_asize, l2_asize),
+            'num': fBytes(l2_bufc_metadata_asize),
         }
 
         output["l2_arc_evicts"] = {}
@@ -772,7 +797,7 @@ def _l2arc_summary(Kstat):
         sys.stdout.write("\n")
 
         sys.stdout.write("L2 ARC Size: (Adaptive)\t\t\t\t%s\n" %
-                         arc["l2_arc_size"]["adative"])
+                         arc["l2_arc_size"]["adaptive"])
         sys.stdout.write("\tCompressed:\t\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["actual"]["per"],
             arc["l2_arc_size"]["actual"]["num"],
@@ -781,6 +806,31 @@ def _l2arc_summary(Kstat):
         sys.stdout.write("\tHeader Size:\t\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["head_size"]["per"],
             arc["l2_arc_size"]["head_size"]["num"],
+            )
+        )
+        sys.stdout.write("\tMFU Size:\t\t\t%s\t%s\n" % (
+            arc["l2_arc_size"]["mfu_asize"]["per"],
+            arc["l2_arc_size"]["mfu_asize"]["num"],
+            )
+        )
+        sys.stdout.write("\tMRU Size:\t\t\t%s\t%s\n" % (
+            arc["l2_arc_size"]["mru_asize"]["per"],
+            arc["l2_arc_size"]["mru_asize"]["num"],
+            )
+        )
+        sys.stdout.write("\tPrefetch Size:\t\t\t%s\t%s\n" % (
+            arc["l2_arc_size"]["prefetch_asize"]["per"],
+            arc["l2_arc_size"]["prefetch_asize"]["num"],
+            )
+        )
+        sys.stdout.write("\tData (buf content) Size:\t%s\t%s\n" % (
+            arc["l2_arc_size"]["bufc_data_asize"]["per"],
+            arc["l2_arc_size"]["bufc_data_asize"]["num"],
+            )
+        )
+        sys.stdout.write("\tMetadata (buf content) Size:\t%s\t%s\n" % (
+            arc["l2_arc_size"]["bufc_metadata_asize"]["per"],
+            arc["l2_arc_size"]["bufc_metadata_asize"]["num"],
             )
         )
         sys.stdout.write("\n")

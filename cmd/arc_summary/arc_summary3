@@ -736,6 +736,21 @@ def section_l2arc(kstats_dict):
     prt_i2('Header size:',
            f_perc(arc_stats['l2_hdr_size'], arc_stats['l2_size']),
            f_bytes(arc_stats['l2_hdr_size']))
+    prt_i2('MFU aligned size:',
+           f_perc(arc_stats['l2_mfu_asize'], arc_stats['l2_asize']),
+           f_bytes(arc_stats['l2_mfu_asize']))
+    prt_i2('MRU aligned size:',
+           f_perc(arc_stats['l2_mru_asize'], arc_stats['l2_asize']),
+           f_bytes(arc_stats['l2_mru_asize']))
+    prt_i2('Prefetch aligned size:',
+           f_perc(arc_stats['l2_prefetch_asize'], arc_stats['l2_asize']),
+           f_bytes(arc_stats['l2_prefetch_asize']))
+    prt_i2('Data (buffer content) aligned size:',
+           f_perc(arc_stats['l2_bufc_data_asize'], arc_stats['l2_asize']),
+           f_bytes(arc_stats['l2_bufc_data_asize']))
+    prt_i2('Metadata (buffer content) aligned size:',
+           f_perc(arc_stats['l2_bufc_metadata_asize'], arc_stats['l2_asize']),
+           f_bytes(arc_stats['l2_bufc_metadata_asize']))
 
     print()
     prt_1('L2ARC breakdown:', f_hits(l2_access_total))
