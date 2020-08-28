@@ -898,3 +898,7 @@ tests = ['log_spacemap_import_logs']
 pre =
 post =
 tags = ['functional', 'log_spacemap']
+
+[tests/functional/l2arc_arcstats]
+tests = ['l2arc_arcstats_001_pos']
+tags = ['functional', 'l2arc_arcstats']

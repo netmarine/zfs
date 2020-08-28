@@ -1,0 +1,89 @@
+#!/bin/ksh -p
+#
+# CDDL HEADER START
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright (c) 2020, George Amanakis. All rights reserved.
+#
+
+. $STF_SUITE/include/libtest.shlib
+. $STF_SUITE/tests/functional/l2arc_arcstats/l2arc_arcstats.cfg
+
+#
+# DESCRIPTION:
+#	L2ARC MFU/MRU arcstats do not leak
+#
+# STRATEGY:
+#	1. Create pool with a cache device.
+#	2. Create a random file in that pool, smaller than the cache device
+#		and random read for 30 sec.
+#	3. Read l2arc_mfu_asize and l2arc_mru_asize
+#	4. Export pool.
+#	 . Verify l2arc_mfu_asize and l2arc_mru_asize are 0.
+#	5. Import pool.
+#	6. Read random read for 30 sec.
+#	7. Read l2arc_mfu_asize and l2arc_mru_asize
+#	8. Verify that L2ARC MFU increased and L2ARC MRU decreased.
+#
+
+verify_runnable "global"
+
+log_assert "L2ARC MFU/MRU arcstats do not leak."
+
+function cleanup
+{
+	if poolexists $TESTPOOL ; then
+		destroy_pool $TESTPOOL
+	fi
+
+	log_must set_tunable32 L2ARC_NOPREFETCH $noprefetch
+}
+log_onexit cleanup
+
+# L2ARC_NOPREFETCH is set to 0 to let L2ARC handle prefetches
+typeset noprefetch=$(get_tunable L2ARC_NOPREFETCH)
+log_must set_tunable32 L2ARC_NOPREFETCH 0
+
+typeset fill_mb=800
+typeset cache_sz=$(( 1.4 * $fill_mb ))
+export FILE_SIZE=$(( floor($fill_mb / $NUMJOBS) ))M
+
+log_must truncate -s ${cache_sz}M $VDEV_CACHE
+
+typeset log_blk_start=$(get_arcstat l2_log_blk_writes)
+
+log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
+
+log_must fio $FIO_SCRIPTS/mkfiles.fio
+log_must fio $FIO_SCRIPTS/random_reads.fio
+
+typeset l2_mfu_init=$(get_arcstat l2_mfu_asize)
+typeset l2_mru_init=$(get_arcstat l2_mru_asize)
+
+log_must zpool export $TESTPOOL
+log_must test $(get_arcstat l2_mfu_asize) -eq 0
+log_must test $(get_arcstat l2_mru_asize) -eq 0
+log_must zpool import -d $VDIR $TESTPOOL
+
+log_must fio $FIO_SCRIPTS/random_reads.fio
+typeset l2_mfu_end=$(get_arcstat l2_mfu_asize)
+typeset l2_mru_end=$(get_arcstat l2_mru_asize)
+
+log_must test $(( $l2_mfu_end - $l2_mfu_init )) -gt 0
+log_must test $(( $l2_mru_end - $l2_mru_init )) -lt 0
+
+log_must zpool destroy -f $TESTPOOL
+
+log_pass "L2ARC MFU/MRU arcstats do not leak."
