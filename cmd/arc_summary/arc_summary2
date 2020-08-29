@@ -231,18 +231,18 @@ def get_arc_summary(Kstat):
     output["arc_misc"]["deleted"] = fHits(deleted)
     output["arc_misc"]["mutex_miss"] = fHits(mutex_miss)
     output["arc_misc"]["evict_skips"] = fHits(evict_skip)
-    output["arc_misc"]["evict_l2_cached"] = fHits(evict_l2_cached)
-    output["arc_misc"]["evict_l2_eligible"] = fHits(evict_l2_eligible)
+    output["arc_misc"]["evict_l2_skip"] = fHits(evict_l2_skip)
+    output["arc_misc"]["evict_l2_cached"] = fBytes(evict_l2_cached)
+    output["arc_misc"]["evict_l2_eligible"] = fBytes(evict_l2_eligible)
     output["arc_misc"]["evict_l2_eligible_mfu"] = {
             'per': fPerc(evict_l2_eligible_mfu, evict_l2_eligible),
-            'num': fHits(evict_l2_eligible_mfu),
+            'num': fBytes(evict_l2_eligible_mfu),
     }
     output["arc_misc"]["evict_l2_eligible_mru"] = {
             'per': fPerc(evict_l2_eligible_mru, evict_l2_eligible),
-            'num': fHits(evict_l2_eligible_mru),
+            'num': fBytes(evict_l2_eligible_mru),
     }
-    output["arc_misc"]["evict_l2_ineligible"] = fHits(evict_l2_ineligible)
-    output["arc_misc"]["evict_l2_skip"] = fHits(evict_l2_skip)
+    output["arc_misc"]["evict_l2_ineligible"] = fBytes(evict_l2_ineligible)
 
     # ARC Sizing
     arc_size = Kstat["kstat.zfs.misc.arcstats.size"]
@@ -844,12 +844,12 @@ def _l2arc_summary(Kstat):
             arc["l2_arc_size"]["head_size"]["num"],
             )
         )
-        sys.stdout.write("\tMFU Comp. Size:\t\t%s\t%s\n" % (
+        sys.stdout.write("\tMFU Comp. Size:\t\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["mfu_asize"]["per"],
             arc["l2_arc_size"]["mfu_asize"]["num"],
             )
         )
-        sys.stdout.write("\tMRU Comp. Size:\t\t%s\t%s\n" % (
+        sys.stdout.write("\tMRU Comp. Size:\t\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["mru_asize"]["per"],
             arc["l2_arc_size"]["mru_asize"]["num"],
             )

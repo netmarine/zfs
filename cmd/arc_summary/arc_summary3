@@ -600,18 +600,18 @@ def section_arc(kstats_dict):
     prt_i1('Eviction skips:', f_hits(arc_stats['evict_skip']))
     prt_i1('Eviction skips due to L2 writes:',
            f_hits(arc_stats['evict_l2_skip']))
-    prt_i1('L2 cached evictions:', f_hits(arc_stats['evict_l2_cached']))
-    prt_i1('L2 eligible evictions:', f_hits(arc_stats['evict_l2_eligible']))
+    prt_i1('L2 cached evictions:', f_bytes(arc_stats['evict_l2_cached']))
+    prt_i1('L2 eligible evictions:', f_bytes(arc_stats['evict_l2_eligible']))
     prt_i2('L2 eligible MFU evictions:',
            f_perc(arc_stats['evict_l2_eligible_mfu'],
            arc_stats['evict_l2_eligible']),
-           f_hits(arc_stats['evict_l2_eligible_mfu']))
+           f_bytes(arc_stats['evict_l2_eligible_mfu']))
     prt_i2('L2 eligible MRU evictions:',
            f_perc(arc_stats['evict_l2_eligible_mru'],
            arc_stats['evict_l2_eligible']),
-           f_hits(arc_stats['evict_l2_eligible_mru']))
+           f_bytes(arc_stats['evict_l2_eligible_mru']))
     prt_i1('L2 ineligible evictions:',
-           f_hits(arc_stats['evict_l2_ineligible']))
+           f_bytes(arc_stats['evict_l2_ineligible']))
     print()
 
 
