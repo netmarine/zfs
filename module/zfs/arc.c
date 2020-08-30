@@ -7987,6 +7987,7 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 	 * 2. is already cached on the L2ARC.
 	 * 3. has an I/O in progress (it may be an incomplete read).
 	 * 4. is flagged not eligible (zfs property).
+	 * 5. is a prefetch and l2arc_noprefetch is set.
 	 */
 	if (hdr->b_spa != spa_guid || HDR_HAS_L2HDR(hdr) ||
 	    HDR_IO_IN_PROGRESS(hdr) || !HDR_L2CACHE(hdr) ||
