@@ -360,23 +360,23 @@ def _arc_summary(Kstat):
                      arc['arc_misc']['mutex_miss'])
     sys.stdout.write("\tEviction Skips:\t\t\t\t%s\n" %
                      arc['arc_misc']['evict_skips'])
-    sys.stdout.write("\tEviction Skips due to L2 writes:\t%s\n" %
+    sys.stdout.write("\tEviction Skips Due to L2 Writes:\t%s\n" %
                      arc['arc_misc']['evict_l2_skip'])
-    sys.stdout.write("\tL2 cached evictions:\t\t\t%s\n" %
+    sys.stdout.write("\tL2 Cached Evictions:\t\t\t%s\n" %
                      arc['arc_misc']['evict_l2_cached'])
-    sys.stdout.write("\tL2 eligible evictions:\t\t\t%s\n" %
+    sys.stdout.write("\tL2 Eligible Evictions:\t\t\t%s\n" %
                      arc['arc_misc']['evict_l2_eligible'])
-    sys.stdout.write("\tL2 eligible MFU evictions:\t%s\t%s\n" % (
+    sys.stdout.write("\tL2 Eligible MFU Evictions:\t%s\t%s\n" % (
                      arc['arc_misc']['evict_l2_eligible_mfu']['per'],
                      arc['arc_misc']['evict_l2_eligible_mfu']['num'],
                      )
     )
-    sys.stdout.write("\tL2 eligible MRU evictions:\t%s\t%s\n" % (
+    sys.stdout.write("\tL2 Eligible MRU Evictions:\t%s\t%s\n" % (
                      arc['arc_misc']['evict_l2_eligible_mru']['per'],
                      arc['arc_misc']['evict_l2_eligible_mru']['num'],
                      )
     )
-    sys.stdout.write("\tL2 ineligible evictions:\t\t%s\n" %
+    sys.stdout.write("\tL2 Ineligible Evictions:\t\t%s\n" %
                      arc['arc_misc']['evict_l2_ineligible'])
     sys.stdout.write("\n")
 
