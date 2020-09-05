@@ -19,7 +19,7 @@
 #
 
 . $STF_SUITE/include/libtest.shlib
-. $STF_SUITE/tests/functional/l2arc_arcstats/l2arc_arcstats.cfg
+. $STF_SUITE/tests/functional/l2arc/l2arc.cfg
 
 #
 # DESCRIPTION:

@@ -899,6 +899,6 @@ pre =
 post =
 tags = ['functional', 'log_spacemap']
 
-[tests/functional/l2arc_arcstats]
+[tests/functional/l2arc]
 tests = ['l2arc_arcstats_pos']
-tags = ['functional', 'l2arc_arcstats']
+tags = ['functional', 'l2arc']

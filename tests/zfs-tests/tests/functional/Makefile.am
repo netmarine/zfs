@@ -31,7 +31,7 @@ SUBDIRS = \
 	inheritance \
 	inuse \
 	io \
-	l2arc_arcstats \
+	l2arc \
 	large_files \
 	largest_pool \
 	libzfs \
