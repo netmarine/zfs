@@ -750,19 +750,19 @@ def section_l2arc(kstats_dict):
     prt_i2('Header size:',
            f_perc(arc_stats['l2_hdr_size'], arc_stats['l2_size']),
            f_bytes(arc_stats['l2_hdr_size']))
-    prt_i2('MFU aligned size:',
+    prt_i2('MFU allocated size:',
            f_perc(arc_stats['l2_mfu_asize'], arc_stats['l2_asize']),
            f_bytes(arc_stats['l2_mfu_asize']))
-    prt_i2('MRU aligned size:',
+    prt_i2('MRU allocated size:',
            f_perc(arc_stats['l2_mru_asize'], arc_stats['l2_asize']),
            f_bytes(arc_stats['l2_mru_asize']))
-    prt_i2('Prefetch aligned size:',
+    prt_i2('Prefetch allocated size:',
            f_perc(arc_stats['l2_prefetch_asize'], arc_stats['l2_asize']),
            f_bytes(arc_stats['l2_prefetch_asize']))
-    prt_i2('Data (buffer content) aligned size:',
+    prt_i2('Data (buffer content) allocated size:',
            f_perc(arc_stats['l2_bufc_data_asize'], arc_stats['l2_asize']),
            f_bytes(arc_stats['l2_bufc_data_asize']))
-    prt_i2('Metadata (buffer content) aligned size:',
+    prt_i2('Metadata (buffer content) allocated size:',
            f_perc(arc_stats['l2_bufc_metadata_asize'], arc_stats['l2_asize']),
            f_bytes(arc_stats['l2_bufc_metadata_asize']))
 

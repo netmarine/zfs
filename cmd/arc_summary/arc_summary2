@@ -844,22 +844,22 @@ def _l2arc_summary(Kstat):
             arc["l2_arc_size"]["head_size"]["num"],
             )
         )
-        sys.stdout.write("\tMFU Comp. Size:\t\t\t%s\t%s\n" % (
+        sys.stdout.write("\tMFU Alloc. Size:\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["mfu_asize"]["per"],
             arc["l2_arc_size"]["mfu_asize"]["num"],
             )
         )
-        sys.stdout.write("\tMRU Comp. Size:\t\t\t%s\t%s\n" % (
+        sys.stdout.write("\tMRU Alloc. Size:\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["mru_asize"]["per"],
             arc["l2_arc_size"]["mru_asize"]["num"],
             )
         )
-        sys.stdout.write("\tPrefetch Comp. Size:\t\t%s\t%s\n" % (
+        sys.stdout.write("\tPrefetch Alloc. Size:\t\t%s\t%s\n" % (
             arc["l2_arc_size"]["prefetch_asize"]["per"],
             arc["l2_arc_size"]["prefetch_asize"]["num"],
             )
         )
-        sys.stdout.write("\tData (buf content) Comp. Size:\t%s\t%s\n" % (
+        sys.stdout.write("\tData (buf content) Alloc. Size:\t%s\t%s\n" % (
             arc["l2_arc_size"]["bufc_data_asize"]["per"],
             arc["l2_arc_size"]["bufc_data_asize"]["num"],
             )
