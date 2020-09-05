@@ -903,6 +903,15 @@ static void l2arc_do_free_on_write(void);
 static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
     boolean_t state_only);
 
+#define	l2arc_hdr_arcstats_increment(hdr) \
+	l2arc_hdr_arcstats_update((hdr), B_TRUE, B_FALSE)
+#define	l2arc_hdr_arcstats_decrement(hdr) \
+	l2arc_hdr_arcstats_update((hdr), B_FALSE, B_FALSE)
+#define	l2arc_hdr_arcstats_increment_state(hdr) \
+	l2arc_hdr_arcstats_update((hdr), B_TRUE, B_TRUE)
+#define	l2arc_hdr_arcstats_decrement_state(hdr) \
+	l2arc_hdr_arcstats_update((hdr), B_FALSE, B_TRUE)
+
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
  * 		metadata and data are cached from ARC into L2ARC.
@@ -2322,10 +2331,10 @@ add_reference(arc_buf_hdr_t *hdr, void *tag)
 		}
 		/* remove the prefetch flag if we get a reference */
 		if (HDR_HAS_L2HDR(hdr))
-			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+			l2arc_hdr_arcstats_decrement_state(hdr);
 		arc_hdr_clear_flags(hdr, ARC_FLAG_PREFETCH);
 		if (HDR_HAS_L2HDR(hdr))
-			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+			l2arc_hdr_arcstats_increment_state(hdr);
 	}
 }
 
@@ -2612,9 +2621,9 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 		hdr->b_l1hdr.b_state = new_state;
 
 		if (HDR_HAS_L2HDR(hdr) && new_state != arc_l2c_only) {
-			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+			l2arc_hdr_arcstats_decrement_state(hdr);
 			hdr->b_l2hdr.b_arcs_state = new_state->arcs_state;
-			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+			l2arc_hdr_arcstats_increment_state(hdr);
 		}
 	}
 
@@ -3718,14 +3727,14 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	int64_t psize_s;
 	int64_t asize_s;
 
-	if (!incr) {
-		lsize_s = -lsize;
-		psize_s = -psize;
-		asize_s = -asize;
-	} else {
+	if (incr) {
 		lsize_s = lsize;
 		psize_s = psize;
 		asize_s = asize;
+	} else {
+		lsize_s = -lsize;
+		psize_s = -psize;
+		asize_s = -asize;
 	}
 
 	/* If the buffer is a prefetch, count it as such. */
@@ -3787,7 +3796,7 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 
 	list_remove(&dev->l2ad_buflist, hdr);
 
-	l2arc_hdr_arcstats_update(hdr, B_FALSE, B_FALSE);
+	l2arc_hdr_arcstats_decrement(hdr);
 	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
 
 	(void) zfs_refcount_remove_many(&dev->l2ad_alloc, arc_hdr_size(hdr),
@@ -5440,16 +5449,14 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 				    &hdr->b_l1hdr.b_arc_node));
 			} else {
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_FALSE,
-					    B_TRUE);
+					l2arc_hdr_arcstats_decrement_state(hdr);
 				arc_hdr_clear_flags(hdr,
 				    ARC_FLAG_PREFETCH |
 				    ARC_FLAG_PRESCIENT_PREFETCH);
 				atomic_inc_32(&hdr->b_l1hdr.b_mru_hits);
 				ARCSTAT_BUMP(arcstat_mru_hits);
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_TRUE,
-					    B_TRUE);
+					l2arc_hdr_arcstats_increment_state(hdr);
 			}
 			hdr->b_l1hdr.b_arc_access = now;
 			return;
@@ -5484,14 +5491,12 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 			new_state = arc_mru;
 			if (zfs_refcount_count(&hdr->b_l1hdr.b_refcnt) > 0) {
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_FALSE,
-					    B_TRUE);
+					l2arc_hdr_arcstats_decrement_state(hdr);
 				arc_hdr_clear_flags(hdr,
 				    ARC_FLAG_PREFETCH |
 				    ARC_FLAG_PRESCIENT_PREFETCH);
 				if (HDR_HAS_L2HDR(hdr))
-					l2arc_hdr_arcstats_update(hdr, B_TRUE,
-					    B_TRUE);
+					l2arc_hdr_arcstats_increment_state(hdr);
 			}
 			DTRACE_PROBE1(new_state__mru, arc_buf_hdr_t *, hdr);
 		} else {
@@ -6066,12 +6071,10 @@ top:
 		} else if (*arc_flags & ARC_FLAG_PREFETCH &&
 		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
 			if (HDR_HAS_L2HDR(hdr))
-				l2arc_hdr_arcstats_update(hdr, B_FALSE,
-				    B_TRUE);
+				l2arc_hdr_arcstats_decrement_state(hdr);
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 			if (HDR_HAS_L2HDR(hdr))
-				l2arc_hdr_arcstats_update(hdr, B_TRUE,
-				    B_TRUE);
+				l2arc_hdr_arcstats_increment_state(hdr);
 		}
 		DTRACE_PROBE1(arc__hit, arc_buf_hdr_t *, hdr);
 		arc_access(hdr, hash_lock);
@@ -6217,10 +6220,10 @@ top:
 		if (*arc_flags & ARC_FLAG_PREFETCH &&
 		    zfs_refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
 			if (HDR_HAS_L2HDR(hdr))
-				l2arc_hdr_arcstats_update(hdr, B_FALSE, B_TRUE);
+				l2arc_hdr_arcstats_decrement_state(hdr);
 			arc_hdr_set_flags(hdr, ARC_FLAG_PREFETCH);
 			if (HDR_HAS_L2HDR(hdr))
-				l2arc_hdr_arcstats_update(hdr, B_TRUE, B_TRUE);
+				l2arc_hdr_arcstats_increment_state(hdr);
 		}
 		if (*arc_flags & ARC_FLAG_PRESCIENT_PREFETCH)
 			arc_hdr_set_flags(hdr, ARC_FLAG_PRESCIENT_PREFETCH);
@@ -8245,7 +8248,7 @@ top:
 			arc_hdr_clear_flags(hdr, ARC_FLAG_HAS_L2HDR);
 
 			uint64_t psize = HDR_GET_PSIZE(hdr);
-			l2arc_hdr_arcstats_update(hdr, B_FALSE, B_FALSE);
+			l2arc_hdr_arcstats_decrement(hdr);
 
 			bytes_dropped +=
 			    vdev_psize_to_asize(dev->l2ad_vdev, psize);
@@ -9225,7 +9228,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			write_psize += psize;
 			write_asize += asize;
 			dev->l2ad_hand += asize;
-			l2arc_hdr_arcstats_update(hdr, B_TRUE, B_FALSE);
+			l2arc_hdr_arcstats_increment(hdr);
 			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 			mutex_exit(hash_lock);
@@ -10228,7 +10231,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 	 * vdev_space_update() has to be called before arc_hdr_destroy() to
 	 * avoid underflow since the latter also calls vdev_space_update().
 	 */
-	l2arc_hdr_arcstats_update(hdr, B_TRUE, B_FALSE);
+	l2arc_hdr_arcstats_increment(hdr);
 	vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 
 	mutex_enter(&dev->l2ad_mtx);
@@ -10257,7 +10260,7 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev)
 			(void) zfs_refcount_add_many(&dev->l2ad_alloc,
 			    arc_hdr_size(exists), exists);
 			mutex_exit(&dev->l2ad_mtx);
-			l2arc_hdr_arcstats_update(exists, B_TRUE, B_FALSE);
+			l2arc_hdr_arcstats_increment(exists);
 			vdev_space_update(dev->l2ad_vdev, asize, 0, 0);
 		}
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
