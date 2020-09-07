@@ -4188,7 +4188,7 @@ dump_l2arc_log_entries(uint64_t log_entries,
 		    (u_longlong_t)L2BLK_GET_PREFETCH((&le[j])->le_prop));
 		(void) printf("|\t\t\t\taddress: %llu\n",
 		    (u_longlong_t)le[j].le_daddr);
-		(void) printf("|\t\t\t\tstate: %llu\n",
+		(void) printf("|\t\t\t\tARC state: %llu\n",
 		    (u_longlong_t)L2BLK_GET_STATE((&le[j])->le_prop));
 		(void) printf("|\n");
 	}
