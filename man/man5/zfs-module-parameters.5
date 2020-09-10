@@ -209,7 +209,10 @@ This may be desired to avoid wasting space on L2ARC when reading/writing large
 amounts of data that are not expected to be accessed more than once. The
 default is \fB0\fR, meaning both MRU and MFU data and metadata are cached.
 When turning off (\fB0\fR) this feature some MRU buffers will still be present
-in ARC and eventually cached on L2ARC.
+in ARC and eventually cached on L2ARC. If \fBl2arc_noprefetch\fR is set to 0,
+some prefetched buffers will be cached to L2ARC, and those might later
+transition to MRU, in which case the \fBl2arc_mru_asize\fR arcstat will not
+be 0.
 .sp
 Use \fB0\fR for no (default) and \fB1\fR for yes.
 .RE

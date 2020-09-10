@@ -900,5 +900,5 @@ post =
 tags = ['functional', 'log_spacemap']
 
 [tests/functional/l2arc]
-tests = ['l2arc_arcstats_pos']
+tests = ['l2arc_arcstats_pos', 'l2arc_mfuonly_pos']
 tags = ['functional', 'l2arc']
