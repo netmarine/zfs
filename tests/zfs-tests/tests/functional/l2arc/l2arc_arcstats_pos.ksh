@@ -28,12 +28,12 @@
 # STRATEGY:
 #	1. Create pool with a cache device.
 #	2. Create a random file in that pool, smaller than the cache device
-#		and random read for 30 sec.
+#		and random read for 10 sec.
 #	3. Read l2arc_mfu_asize and l2arc_mru_asize
 #	4. Export pool.
 #	 . Verify l2arc_mfu_asize and l2arc_mru_asize are 0.
 #	5. Import pool.
-#	6. Read random read for 30 sec.
+#	6. Read random read for 10 sec.
 #	7. Read l2arc_mfu_asize and l2arc_mru_asize
 #	8. Verify that L2ARC MFU increased and MFU+MRU = L2_asize.
 #
