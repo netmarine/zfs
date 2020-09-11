@@ -30,6 +30,10 @@
 #	2. Create pool with a cache device.
 #	3. Create a random file in that pool, smaller than the cache device
 #		and random read for 10 sec.
+#	4. Export and re-import the pool. This is necessary as some MFU ghost
+#		buffers with prefetch status may transition to MRU eventually.
+#		By re-importing the pool the l2 arcstats reflect the ARC state
+#		of L2ARC buffers upon their caching in L2ARC.
 #	5. Verify l2arc_mru_asize is 0.
 #
 
@@ -69,7 +73,8 @@ log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
-typeset l2_mru=$(get_arcstat l2_mru_asize)
+log_must zpool export $TESTPOOL
+log_must zpool import -d $VDIR $TESTPOOL
 log_must test $(get_arcstat l2_mru_asize) -eq 0
 
 log_must zpool destroy -f $TESTPOOL
