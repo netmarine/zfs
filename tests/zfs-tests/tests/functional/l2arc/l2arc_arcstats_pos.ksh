@@ -31,11 +31,11 @@
 #		and random read for 10 sec.
 #	3. Read l2arc_mfu_asize and l2arc_mru_asize
 #	4. Export pool.
-#	 . Verify l2arc_mfu_asize and l2arc_mru_asize are 0.
-#	5. Import pool.
-#	6. Read random read for 10 sec.
-#	7. Read l2arc_mfu_asize and l2arc_mru_asize
-#	8. Verify that L2ARC MFU increased and MFU+MRU = L2_asize.
+#	5. Verify l2arc_mfu_asize and l2arc_mru_asize are 0.
+#	6. Import pool.
+#	7. Read random read for 10 sec.
+#	8. Read l2arc_mfu_asize and l2arc_mru_asize
+#	9. Verify that L2ARC MFU increased and MFU+MRU = L2_asize.
 #
 
 verify_runnable "global"
