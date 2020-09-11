@@ -48,7 +48,6 @@ SUBDIRS = \
 	nopwrite \
 	online_offline \
 	pam \
-	persist_l2arc \
 	pool_checkpoint \
 	pool_names \
 	poolversion \
