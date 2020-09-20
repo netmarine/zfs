@@ -897,10 +897,27 @@ static spa_iostats_t spa_iostats_template = {
 	{ "simple_trim_bytes_skipped",		KSTAT_DATA_UINT64 },
 	{ "simple_trim_extents_failed",		KSTAT_DATA_UINT64 },
 	{ "simple_trim_bytes_failed",		KSTAT_DATA_UINT64 },
+	{ "l2_hits",				KSTAT_DATA_UINT64 },
+	{ "l2_misses",				KSTAT_DATA_UINT64 },
 };
 
 #define	SPA_IOSTATS_ADD(stat, val) \
     atomic_add_64(&iostats->stat.value.ui64, (val));
+
+void
+spa_iostats_l2_add(spa_t *spa, uint64_t count)
+{
+	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	kstat_t *ksp = shk->kstat;
+	spa_iostats_t *iostats;
+
+	if (ksp == NULL)
+		return;
+
+	iostats = ksp->ks_data;
+	SPA_IOSTATS_ADD(l2_hits, count);
+}
+
 
 void
 spa_iostats_trim_add(spa_t *spa, trim_type_t type,
