@@ -6314,6 +6314,7 @@ top:
 
 				DTRACE_PROBE1(l2arc__hit, arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_hits);
+				spa_iostats_l2_hits(spa, 1);
 				atomic_inc_32(&hdr->b_l2hdr.b_hits);
 
 				cb = kmem_zalloc(sizeof (l2arc_read_callback_t),
@@ -6389,6 +6390,7 @@ top:
 				DTRACE_PROBE1(l2arc__miss,
 				    arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_misses);
+				spa_iostats_l2_misses(spa, 1);
 				if (HDR_L2_WRITING(hdr))
 					ARCSTAT_BUMP(arcstat_l2_rw_clash);
 				spa_config_exit(spa, SCL_L2ARC, vd);
@@ -6405,6 +6407,7 @@ top:
 				DTRACE_PROBE1(l2arc__miss,
 				    arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_misses);
+				spa_iostats_l2_misses(spa, 1);
 			}
 		}
 
