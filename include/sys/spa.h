@@ -954,6 +954,9 @@ typedef struct spa_iostats {
 	kstat_named_t	simple_trim_bytes_failed;
 	kstat_named_t	l2_hits;
 	kstat_named_t	l2_misses;
+	kstat_named_t	l2_prefetch_asize;
+	kstat_named_t	l2_mfu_asize;
+	kstat_named_t	l2_mru_asize;
 } spa_iostats_t;
 
 extern void spa_stats_init(spa_t *spa);
@@ -974,6 +977,8 @@ extern void spa_mmp_history_add(spa_t *spa, uint64_t txg, uint64_t timestamp,
     uint64_t mmp_delay, vdev_t *vd, int label, uint64_t mmp_kstat_id,
     int error);
 extern void spa_iostats_l2_hitmiss(spa_t *spa, uint64_t hits, uint64_t misses);
+extern void spa_iostats_l2_arcstate(spa_t *spa, uint64_t prefetch,
+    uint64_t mfu, uint64_t mru);
 extern void spa_iostats_trim_add(spa_t *spa, trim_type_t type,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,

@@ -899,6 +899,9 @@ static spa_iostats_t spa_iostats_template = {
 	{ "simple_trim_bytes_failed",		KSTAT_DATA_UINT64 },
 	{ "l2_hits",				KSTAT_DATA_UINT64 },
 	{ "l2_misses",				KSTAT_DATA_UINT64 },
+	{ "l2_prefetch_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_mfu_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_mru_asize",			KSTAT_DATA_UINT64 },
 };
 
 #define	SPA_IOSTATS_ADD(stat, val) \
@@ -920,6 +923,23 @@ spa_iostats_l2_hitmiss(spa_t *spa, uint64_t hits, uint64_t misses)
 	iostats = ksp->ks_data;
 	SPA_IOSTATS_ADD(l2_hits, hits);
 	SPA_IOSTATS_ADD(l2_misses, misses);
+}
+
+void
+spa_iostats_l2_arcstate(spa_t *spa, uint64_t prefetch, uint64_t mfu,
+    uint64_t mru)
+{
+	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	kstat_t *ksp = shk->kstat;
+	spa_iostats_t *iostats;
+
+	if (ksp == NULL)
+		return;
+
+	iostats = ksp->ks_data;
+	SPA_IOSTATS_ADD(l2_prefetch_asize, prefetch);
+	SPA_IOSTATS_ADD(l2_mfu_asize, mfu);
+	SPA_IOSTATS_ADD(l2_mru_asize, mru);
 }
 
 void

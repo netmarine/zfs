@@ -916,6 +916,12 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	spa_iostats_l2_hitmiss(spa, 1, 0)
 #define spa_iostats_l2_misses(spa) \
 	spa_iostats_l2_hitmiss(spa, 0, 1)
+#define spa_iostats_l2_prefetch(spa, asize) \
+	spa_iostats_l2_arcstate(spa, asize, 0, 0)
+#define spa_iostats_l2_mfu(spa, asize) \
+	spa_iostats_l2_arcstate(spa, 0, asize, 0)
+#define spa_iostats_l2_mru(spa, asize) \
+	spa_iostats_l2_arcstate(spa, 0, 0, asize)
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
@@ -3724,6 +3730,7 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 {
 	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
 	l2arc_dev_t *dev = l2hdr->b_dev;
+	spa_t *spa = dev->l2ad_spa;
 	uint64_t lsize = HDR_GET_LSIZE(hdr);
 	uint64_t psize = HDR_GET_PSIZE(hdr);
 	uint64_t asize = vdev_psize_to_asize(dev->l2ad_vdev, psize);
@@ -3745,6 +3752,7 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	/* If the buffer is a prefetch, count it as such. */
 	if (HDR_PREFETCH(hdr)) {
 		ARCSTAT_INCR(arcstat_l2_prefetch_asize, asize_s);
+		spa_iostats_l2_prefetch(spa, asize_s);
 	} else {
 		/*
 		 * We use the value stored in the L2 header upon initial
@@ -3759,10 +3767,12 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 			case ARC_STATE_MRU_GHOST:
 			case ARC_STATE_MRU:
 				ARCSTAT_INCR(arcstat_l2_mru_asize, asize_s);
+				spa_iostats_l2_mru(spa, asize_s);
 				break;
 			case ARC_STATE_MFU_GHOST:
 			case ARC_STATE_MFU:
 				ARCSTAT_INCR(arcstat_l2_mfu_asize, asize_s);
+				spa_iostats_l2_mfu(spa, asize_s);
 				break;
 			default:
 				break;
