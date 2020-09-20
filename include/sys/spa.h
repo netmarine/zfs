@@ -976,9 +976,8 @@ extern int spa_mmp_history_set(spa_t *spa, uint64_t mmp_kstat_id, int io_error,
 extern void spa_mmp_history_add(spa_t *spa, uint64_t txg, uint64_t timestamp,
     uint64_t mmp_delay, vdev_t *vd, int label, uint64_t mmp_kstat_id,
     int error);
-extern void spa_iostats_l2_hitmiss(spa_t *spa, uint64_t hits, uint64_t misses);
-extern void spa_iostats_l2_arcstate(spa_t *spa, uint64_t prefetch,
-    uint64_t mfu, uint64_t mru);
+extern void spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
+    uint64_t prefetch, uint64_t mfu, uint64_t mru);
 extern void spa_iostats_trim_add(spa_t *spa, trim_type_t type,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,

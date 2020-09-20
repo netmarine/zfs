@@ -913,15 +913,15 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	l2arc_hdr_arcstats_update((hdr), B_FALSE, B_TRUE)
 
 #define spa_iostats_l2_hits(spa) \
-	spa_iostats_l2_hitmiss(spa, 1, 0)
+	spa_iostats_l2(spa, 1, 0, 0, 0, 0)
 #define spa_iostats_l2_misses(spa) \
-	spa_iostats_l2_hitmiss(spa, 0, 1)
+	spa_iostats_l2(spa, 0, 1, 0, 0, 0)
 #define spa_iostats_l2_prefetch(spa, asize) \
-	spa_iostats_l2_arcstate(spa, asize, 0, 0)
+	spa_iostats_l2(spa, 0, 0, asize, 0, 0)
 #define spa_iostats_l2_mfu(spa, asize) \
-	spa_iostats_l2_arcstate(spa, 0, asize, 0)
+	spa_iostats_l2(spa, 0, 0, 0, asize, 0)
 #define spa_iostats_l2_mru(spa, asize) \
-	spa_iostats_l2_arcstate(spa, 0, 0, asize)
+	spa_iostats_l2(spa, 0, 0, 0, 0, asize)
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
