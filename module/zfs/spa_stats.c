@@ -908,7 +908,7 @@ static spa_iostats_t spa_iostats_template = {
     atomic_sub_64(&iostats->stat.value.ui64, (val));
 
 void
-spa_iostats_l2_hits(spa_t *spa, uint64_t count)
+spa_iostats_l2_hitmiss(spa_t *spa, uint64_t hits, uint64_t misses)
 {
 	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
@@ -918,21 +918,8 @@ spa_iostats_l2_hits(spa_t *spa, uint64_t count)
 		return;
 
 	iostats = ksp->ks_data;
-	SPA_IOSTATS_ADD(l2_hits, count);
-}
-
-void
-spa_iostats_l2_misses(spa_t *spa, uint64_t count)
-{
-	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
-	kstat_t *ksp = shk->kstat;
-	spa_iostats_t *iostats;
-
-	if (ksp == NULL)
-		return;
-
-	iostats = ksp->ks_data;
-	SPA_IOSTATS_ADD(l2_misses, count);
+	SPA_IOSTATS_ADD(l2_hits, hits);
+	SPA_IOSTATS_ADD(l2_misses, misses);
 }
 
 void

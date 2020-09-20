@@ -912,6 +912,11 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 #define	l2arc_hdr_arcstats_decrement_state(hdr) \
 	l2arc_hdr_arcstats_update((hdr), B_FALSE, B_TRUE)
 
+#define spa_iostats_l2_hits(spa) \
+	spa_iostats_l2_hitmiss(spa, 1, 0)
+#define spa_iostats_l2_misses(spa) \
+	spa_iostats_l2_hitmiss(spa, 0, 1)
+
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
  * 		metadata and data are cached from ARC into L2ARC.
@@ -6314,7 +6319,7 @@ top:
 
 				DTRACE_PROBE1(l2arc__hit, arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_hits);
-				spa_iostats_l2_hits(spa, 1);
+				spa_iostats_l2_hits(spa);
 				atomic_inc_32(&hdr->b_l2hdr.b_hits);
 
 				cb = kmem_zalloc(sizeof (l2arc_read_callback_t),
@@ -6390,7 +6395,7 @@ top:
 				DTRACE_PROBE1(l2arc__miss,
 				    arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_misses);
-				spa_iostats_l2_misses(spa, 1);
+				spa_iostats_l2_misses(spa);
 				if (HDR_L2_WRITING(hdr))
 					ARCSTAT_BUMP(arcstat_l2_rw_clash);
 				spa_config_exit(spa, SCL_L2ARC, vd);
@@ -6407,7 +6412,7 @@ top:
 				DTRACE_PROBE1(l2arc__miss,
 				    arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_l2_misses);
-				spa_iostats_l2_misses(spa, 1);
+				spa_iostats_l2_misses(spa);
 			}
 		}
 
