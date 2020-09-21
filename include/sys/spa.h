@@ -957,6 +957,25 @@ typedef struct spa_iostats {
 	kstat_named_t	l2_prefetch_asize;
 	kstat_named_t	l2_mfu_asize;
 	kstat_named_t	l2_mru_asize;
+	kstat_named_t	l2_bufc_data_asize;
+	kstat_named_t	l2_bufc_metadata_asize;
+	kstat_named_t	l2_feeds;
+	kstat_named_t	l2_rw_clash;
+	kstat_named_t	l2_read_bytes;
+	kstat_named_t	l2_write_bytes;
+	kstat_named_t	l2_writes_sent;
+	kstat_named_t	l2_writes_done;
+	kstat_named_t	l2_writes_error;
+	kstat_named_t	l2_writes_lock_retry;
+	kstat_named_t	l2_evict_lock_retry;
+	kstat_named_t	l2_evict_reading;
+	kstat_named_t	l2_evict_l1cached;
+	kstat_named_t	l2_free_on_write;
+	kstat_named_t	l2_abort_lowmem;
+	kstat_named_t	l2_cksum_bad;
+	kstat_named_t	l2_io_error;
+	kstat_named_t	l2_size;
+	kstat_named_t	l2_asize;
 } spa_iostats_t;
 
 extern void spa_stats_init(spa_t *spa);
@@ -977,7 +996,13 @@ extern void spa_mmp_history_add(spa_t *spa, uint64_t txg, uint64_t timestamp,
     uint64_t mmp_delay, vdev_t *vd, int label, uint64_t mmp_kstat_id,
     int error);
 extern void spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
-    uint64_t prefetch, uint64_t mfu, uint64_t mru);
+    uint64_t prefetch, uint64_t mfu, uint64_t mru, uint64_t data,
+    uint64_t metadata, uint64_t feeds, uint64_t rw_clash, uint64_t read_bytes,
+    uint64_t write_bytes, uint64_t writes_sent, uint64_t writes_done,
+    uint64_t writes_error, uint64_t writes_lock_retry,
+    uint64_t evict_lock_retry, uint64_t evict_reading, uint64_t evict_l1cached,
+    uint64_t free_on_write, uint64_t abort_lowmem, uint64_t cksum_bad,
+    uint64_t io_error, uint64_t l2_size, uint64_t l2_asize);
 extern void spa_iostats_trim_add(spa_t *spa, trim_type_t type,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,

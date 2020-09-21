@@ -912,16 +912,128 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 #define	l2arc_hdr_arcstats_decrement_state(hdr) \
 	l2arc_hdr_arcstats_update((hdr), B_FALSE, B_TRUE)
 
-#define spa_iostats_l2_hits(spa) \
-	spa_iostats_l2(spa, 1, 0, 0, 0, 0)
-#define spa_iostats_l2_misses(spa) \
-	spa_iostats_l2(spa, 0, 1, 0, 0, 0)
-#define spa_iostats_l2_prefetch(spa, asize) \
-	spa_iostats_l2(spa, 0, 0, asize, 0, 0)
-#define spa_iostats_l2_mfu(spa, asize) \
-	spa_iostats_l2(spa, 0, 0, 0, asize, 0)
-#define spa_iostats_l2_mru(spa, asize) \
-	spa_iostats_l2(spa, 0, 0, 0, 0, asize)
+#define	spa_iostats_l2_hits(spa)	\
+	spa_iostats_l2(			\
+	spa, 1, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_misses(spa)	\
+	spa_iostats_l2(			\
+	spa, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_prefetch(spa, asize)	\
+	spa_iostats_l2(				\
+	spa, 0, 0, asize, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_mfu(spa, asize)		\
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, asize, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_mru(spa, asize)		\
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, 0, asize, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_bufc_data_asize(spa, asize) \
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, 0, 0, asize, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_bufc_metadata_asize(spa, asize) \
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, 0, 0, 0, asize, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0)
+
+#define	spa_iostats_l2_feeds(spa)	\
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_rw_clash(spa)	\
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_read_bytes(spa, bytes)	\
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	bytes, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_write_bytes(spa, bytes)	\
+	spa_iostats_l2(				\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, bytes, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_writes_sent(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_writes_done(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 1, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_writes_error(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 1, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_writes_lock_retry(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 1, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_evict_lock_retry(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 1, 0, 0, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_evict_reading(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 1, 0, 0,	\
+	0, 0, 0, 0, 0)
+
+#define	spa_iostats_l2_evict_l1cached(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_free_on_write(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
+	0, 0, 0, 0, 0)
+#define	spa_iostats_l2_abort_lowmem(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	1, 0, 0, 0, 0)
+#define	spa_iostats_l2_cksum_bad(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 1, 0, 0, 0)
+#define	spa_iostats_l2_io_error(spa) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 1, 0, 0)
+#define	spa_iostats_l2_size(spa, asize) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, asize, 0)
+#define	spa_iostats_l2_asize(spa, asize) \
+	spa_iostats_l2(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
+	0, 0, 0, 0, asize)
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
@@ -3289,6 +3401,7 @@ arc_hdr_free_abd(arc_buf_hdr_t *hdr, boolean_t free_rdata)
 	if (HDR_L2_WRITING(hdr)) {
 		arc_hdr_free_on_write(hdr, free_rdata);
 		ARCSTAT_BUMP(arcstat_l2_free_on_write);
+		spa_iostats_l2_free_on_write(hdr->b_l2hdr.b_dev->l2ad_spa);
 	} else if (free_rdata) {
 		arc_free_data_abd(hdr, hdr->b_crypt_hdr.b_rabd, size, hdr);
 	} else {
@@ -3783,14 +3896,18 @@ l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 		return;
 
 	ARCSTAT_INCR(arcstat_l2_psize, psize_s);
+	spa_iostats_l2_asize(spa, psize_s);
 	ARCSTAT_INCR(arcstat_l2_lsize, lsize_s);
+	spa_iostats_l2_size(spa, lsize_s);
 
 	switch (type) {
 		case ARC_BUFC_DATA:
 			ARCSTAT_INCR(arcstat_l2_bufc_data_asize, asize_s);
+			spa_iostats_l2_bufc_data_asize(spa, asize_s);
 			break;
 		case ARC_BUFC_METADATA:
 			ARCSTAT_INCR(arcstat_l2_bufc_metadata_asize, asize_s);
+			spa_iostats_l2_bufc_metadata_asize(spa, asize_s);
 			break;
 		default:
 			break;
@@ -8190,10 +8307,12 @@ l2arc_write_done(zio_t *zio)
 	arc_buf_hdr_t		*head, *hdr, *hdr_prev;
 	kmutex_t		*hash_lock;
 	int64_t			bytes_dropped = 0;
+	spa_t			*spa;
 
 	cb = zio->io_private;
 	ASSERT3P(cb, !=, NULL);
 	dev = cb->l2wcb_dev;
+	spa = dev->l2ad_spa;
 	l2dhdr = dev->l2ad_dev_hdr;
 	ASSERT3P(dev, !=, NULL);
 	head = cb->l2wcb_head;
@@ -8224,6 +8343,7 @@ top:
 			 * don't leave the ARC_FLAG_L2_WRITING bit set.
 			 */
 			ARCSTAT_BUMP(arcstat_l2_writes_lock_retry);
+			spa_iostats_l2_writes_lock_retry(spa);
 
 			/*
 			 * We don't want to rescan the headers we've
@@ -8315,6 +8435,7 @@ top:
 
 	if (zio->io_error != 0) {
 		ARCSTAT_BUMP(arcstat_l2_writes_error);
+		spa_iostats_l2_writes_error(spa);
 
 		/*
 		 * Restore the lbps array in the header to its previous state.
@@ -8551,11 +8672,13 @@ l2arc_read_done(zio_t *zio)
 		 */
 		if (zio->io_error != 0) {
 			ARCSTAT_BUMP(arcstat_l2_io_error);
+			spa_iostats_l2_io_error(hdr->b_l2hdr.b_dev->l2ad_spa);
 		} else {
 			zio->io_error = SET_ERROR(EIO);
 		}
 		if (!valid_cksum || tfm_error != 0)
 			ARCSTAT_BUMP(arcstat_l2_cksum_bad);
+			spa_iostats_l2_cksum_bad(hdr->b_l2hdr.b_dev->l2ad_spa);
 
 		/*
 		 * If there's no waiter, issue an async i/o to the primary
@@ -8677,6 +8800,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	l2arc_lb_ptr_buf_t *lb_ptr_buf, *lb_ptr_buf_prev;
 	vdev_t *vd = dev->l2ad_vdev;
 	boolean_t rerun;
+	spa_t *spa = dev->l2ad_spa;
 
 	buflist = &dev->l2ad_buflist;
 
@@ -8812,6 +8936,7 @@ retry:
 			 * Missed the hash lock.  Retry.
 			 */
 			ARCSTAT_BUMP(arcstat_l2_evict_lock_retry);
+			spa_iostats_l2_evict_lock_retry(spa);
 			mutex_exit(&dev->l2ad_mtx);
 			mutex_enter(hash_lock);
 			mutex_exit(hash_lock);
@@ -8849,6 +8974,7 @@ retry:
 		} else {
 			ASSERT(hdr->b_l1hdr.b_state != arc_l2c_only);
 			ARCSTAT_BUMP(arcstat_l2_evict_l1cached);
+			spa_iostats_l2_evict_l1cached(spa);
 			/*
 			 * Invalidate issued or about to be issued
 			 * reads, since we may be about to write
@@ -8856,6 +8982,7 @@ retry:
 			 */
 			if (HDR_L2_READING(hdr)) {
 				ARCSTAT_BUMP(arcstat_l2_evict_reading);
+				spa_iostats_l2_evict_reading(spa);
 				arc_hdr_set_flags(hdr, ARC_FLAG_L2_EVICTED);
 			}
 
@@ -9288,7 +9415,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 
 	ASSERT3U(write_asize, <=, target_sz);
 	ARCSTAT_BUMP(arcstat_l2_writes_sent);
+	spa_iostats_l2_writes_sent(spa);
 	ARCSTAT_INCR(arcstat_l2_write_bytes, write_psize);
+	spa_iostats_l2_write_bytes(spa, write_psize);
 
 	dev->l2ad_writing = B_TRUE;
 	(void) zio_wait(pio);
@@ -9382,11 +9511,13 @@ l2arc_feed_thread(void *unused)
 		 */
 		if (l2arc_hdr_limit_reached()) {
 			ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+			spa_iostats_l2_abort_lowmem(spa);
 			spa_config_exit(spa, SCL_L2ARC, dev);
 			continue;
 		}
 
 		ARCSTAT_BUMP(arcstat_l2_feeds);
+		spa_iostats_l2_feeds(spa);
 
 		size = l2arc_write_size(dev);
 

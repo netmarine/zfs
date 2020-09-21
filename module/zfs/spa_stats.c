@@ -902,6 +902,25 @@ static spa_iostats_t spa_iostats_template = {
 	{ "l2_prefetch_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_mfu_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_mru_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_bufc_data_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_bufc_metadata_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_feeds",				KSTAT_DATA_UINT64 },
+	{ "l2_rw_clash",			KSTAT_DATA_UINT64 },
+	{ "l2_read_bytes",			KSTAT_DATA_UINT64 },
+	{ "l2_write_bytes",			KSTAT_DATA_UINT64 },
+	{ "l2_writes_sent",			KSTAT_DATA_UINT64 },
+	{ "l2_writes_done",			KSTAT_DATA_UINT64 },
+	{ "l2_writes_error",			KSTAT_DATA_UINT64 },
+	{ "l2_writes_lock_retry",		KSTAT_DATA_UINT64 },
+	{ "l2_evict_lock_retry",		KSTAT_DATA_UINT64 },
+	{ "l2_evict_reading",			KSTAT_DATA_UINT64 },
+	{ "l2_evict_l1cached",			KSTAT_DATA_UINT64 },
+	{ "l2_free_on_write",			KSTAT_DATA_UINT64 },
+	{ "l2_abort_lowmem",			KSTAT_DATA_UINT64 },
+	{ "l2_cksum_bad",			KSTAT_DATA_UINT64 },
+	{ "l2_io_error",			KSTAT_DATA_UINT64 },
+	{ "l2_size",				KSTAT_DATA_UINT64 },
+	{ "l2_asize",				KSTAT_DATA_UINT64 },
 };
 
 #define	SPA_IOSTATS_ADD(stat, val) \
@@ -909,7 +928,13 @@ static spa_iostats_t spa_iostats_template = {
 
 void
 spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
-    uint64_t prefetch, uint64_t mfu, uint64_t mru)
+    uint64_t prefetch, uint64_t mfu, uint64_t mru, uint64_t data,
+    uint64_t metadata, uint64_t feeds, uint64_t rw_clash, uint64_t read_bytes,
+    uint64_t write_bytes, uint64_t writes_sent, uint64_t writes_done,
+    uint64_t writes_error, uint64_t writes_lock_retry,
+    uint64_t evict_lock_retry, uint64_t evict_reading, uint64_t evict_l1cached,
+    uint64_t free_on_write, uint64_t abort_lowmem, uint64_t cksum_bad,
+    uint64_t io_error, uint64_t l2_size, uint64_t l2_asize)
 {
 	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
@@ -925,6 +950,25 @@ spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
 	SPA_IOSTATS_ADD(l2_prefetch_asize, prefetch);
 	SPA_IOSTATS_ADD(l2_mfu_asize, mfu);
 	SPA_IOSTATS_ADD(l2_mru_asize, mru);
+	SPA_IOSTATS_ADD(l2_bufc_data_asize, data);
+	SPA_IOSTATS_ADD(l2_bufc_metadata_asize, metadata);
+	SPA_IOSTATS_ADD(l2_feeds, feeds);
+	SPA_IOSTATS_ADD(l2_rw_clash, rw_clash);
+	SPA_IOSTATS_ADD(l2_read_bytes, read_bytes);
+	SPA_IOSTATS_ADD(l2_write_bytes, write_bytes);
+	SPA_IOSTATS_ADD(l2_writes_sent, writes_sent);
+	SPA_IOSTATS_ADD(l2_writes_done, writes_done);
+	SPA_IOSTATS_ADD(l2_writes_error, writes_error);
+	SPA_IOSTATS_ADD(l2_writes_lock_retry, writes_lock_retry);
+	SPA_IOSTATS_ADD(l2_evict_lock_retry, evict_lock_retry);
+	SPA_IOSTATS_ADD(l2_evict_reading, evict_reading);
+	SPA_IOSTATS_ADD(l2_evict_l1cached, evict_l1cached);
+	SPA_IOSTATS_ADD(l2_free_on_write, free_on_write);
+	SPA_IOSTATS_ADD(l2_abort_lowmem, abort_lowmem);
+	SPA_IOSTATS_ADD(l2_cksum_bad, cksum_bad);
+	SPA_IOSTATS_ADD(l2_io_error, io_error);
+	SPA_IOSTATS_ADD(l2_size, l2_size);
+	SPA_IOSTATS_ADD(l2_asize, l2_asize);
 }
 
 void
