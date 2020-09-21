@@ -6505,6 +6505,8 @@ top:
 				    zio_t *, rzio);
 				ARCSTAT_INCR(arcstat_l2_read_bytes,
 				    HDR_GET_PSIZE(hdr));
+				spa_iostats_l2_read_bytes(spa,
+				    HDR_GET_PSIZE(hdr));
 
 				if (*arc_flags & ARC_FLAG_NOWAIT) {
 					zio_nowait(rzio);
@@ -8466,6 +8468,7 @@ top:
 	}
 
 	atomic_inc_64(&l2arc_writes_done);
+	spa_iostats_l2_writes_done(spa);
 	list_remove(buflist, head);
 	ASSERT(!HDR_HAS_L1HDR(head));
 	kmem_cache_free(hdr_l2only_cache, head);
