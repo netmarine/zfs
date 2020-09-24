@@ -977,10 +977,8 @@ typedef struct spa_iostats {
 	kstat_named_t	l2_size;
 	kstat_named_t	l2_asize;
 	kstat_named_t	l2_log_blk_writes;
-	kstat_named_t	l2_log_blk_avg_asize;
 	kstat_named_t	l2_log_blk_asize;
 	kstat_named_t	l2_log_blk_count;
-	kstat_named_t	l2_data_to_meta_ratio;
 	kstat_named_t	l2_rebuild_success;
 	kstat_named_t	l2_rebuild_unsupported;
 	kstat_named_t	l2_rebuild_io_errors;
@@ -1019,9 +1017,7 @@ extern void spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
     uint64_t evict_lock_retry, uint64_t evict_reading, uint64_t evict_l1cached,
     uint64_t free_on_write, uint64_t abort_lowmem, uint64_t cksum_bad,
     uint64_t io_error, uint64_t l2_size, uint64_t l2_asize,
-    uint64_t log_blk_writes, uint64_t log_blk_avg_asize,
-    uint64_t log_blk_asize, uint64_t log_blk_count,
-    uint64_t data_to_meta_ratio);
+    uint64_t log_blk_writes, uint64_t log_blk_asize, uint64_t log_blk_count);
 extern void spa_iostats_l2_rebuild(spa_t *spa, uint64_t rebuild_success,
     uint64_t rebuild_unsupported, uint64_t rebuild_io_errors,
     uint64_t rebuild_dh_errors, uint64_t cksum_lb_errors,

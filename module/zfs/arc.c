@@ -558,10 +558,8 @@ arc_stats_t arc_stats = {
 	{ "l2_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_hdr_size",		KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_writes",		KSTAT_DATA_UINT64 },
-	{ "l2_log_blk_avg_asize",	KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_count",		KSTAT_DATA_UINT64 },
-	{ "l2_data_to_meta_ratio",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_success",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",	KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",	KSTAT_DATA_UINT64 },
@@ -627,24 +625,6 @@ arc_stats_t arc_stats = {
 			ARCSTAT_BUMP(arcstat_##notstat1##_##notstat2##_##stat);\
 		}							\
 	}
-
-/*
- * This macro allows us to use kstats as floating averages. Each time we
- * update this kstat, we first factor it and the update value by
- * ARCSTAT_AVG_FACTOR to shrink the new value's contribution to the overall
- * average. This macro assumes that integer loads and stores are atomic, but
- * is not safe for multiple writers updating the kstat in parallel (only the
- * last writer's update will remain).
- */
-#define	ARCSTAT_F_AVG_FACTOR	3
-#define	ARCSTAT_F_AVG(stat, value) \
-	do { \
-		uint64_t x = ARCSTAT(stat); \
-		x = x - x / ARCSTAT_F_AVG_FACTOR + \
-		    (value) / ARCSTAT_F_AVG_FACTOR; \
-		ARCSTAT(stat) = x; \
-		_NOTE(CONSTCOND) \
-	} while (0)
 
 kstat_t			*arc_ksp;
 static arc_state_t	*arc_anon;
@@ -916,153 +896,144 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	spa_iostats_l2(			\
 	spa, 1, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_misses(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_prefetch(spa, asize)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, asize, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_mfu(spa, asize)		\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, asize, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_mru(spa, asize)		\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, asize, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_bufc_data_asize(spa, asize) \
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, asize, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_bufc_metadata_asize(spa, asize) \
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, asize, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_feeds(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_rw_clash(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_read_bytes(spa, bytes)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	bytes, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_write_bytes(spa, bytes)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, bytes, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_sent(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_done(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 1, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_error(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 1, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_lock_retry(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 1, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_lock_retry(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 1, 0, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_reading(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 1, 0, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_l1cached(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_free_on_write(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_abort_lowmem(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	1, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_cksum_bad(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+	0, 1, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_io_error(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 1, 0, 0, 0, 0, 0, 0, 0)
+	0, 0, 1, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_size(spa, asize) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, asize, 0, 0, 0, 0, 0, 0)
+	0, 0, 0, asize, 0, 0, 0, 0)
 #define	spa_iostats_l2_asize(spa, asize) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, asize, 0, 0, 0, 0, 0)
+	0, 0, 0, 0, asize, 0, 0, 0)
 
 #define	spa_iostats_l2_log_blk_writes(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 1, 0, 0, 0, 0)
-#define	spa_iostats_l2_log_blk_avg_asize(spa, asize)	\
-	spa_iostats_l2(			\
-	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, asize, 0, 0, 0)
+	0, 0, 0, 0, 0, 1, 0, 0)
+
 #define	spa_iostats_l2_log_blk_asize(spa, asize)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, asize, 0, 0)
+	0, 0, 0, 0, 0, 0, asize, 0)
 #define	spa_iostats_l2_log_blk_count_inc(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 1, 0)
+	0, 0, 0, 0, 0, 0, 0, 1)
 #define	spa_iostats_l2_log_blk_count_dec(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, -1, 0)
-#define	spa_iostats_l2_data_to_meta_ratio(spa, ratio)	\
-	spa_iostats_l2(			\
-	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0, 0, 0, 0, 0, ratio)
+	0, 0, 0, 0, 0, 0, 0, -1)
 
 #define	spa_iostats_l2_rebuild_success(spa)	\
 	spa_iostats_l2_rebuild(			\
@@ -10427,8 +10398,6 @@ l2arc_log_blk_restore(l2arc_dev_t *dev, const l2arc_log_blk_phys_t *lb,
 	spa_iostats_l2_rebuild_asize(spa, asize);
 	ARCSTAT_INCR(arcstat_l2_rebuild_bufs, log_entries);
 	spa_iostats_l2_rebuild_bufs(spa, log_entries);
-	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_asize, lb_asize);
-	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio, asize / lb_asize);
 	ARCSTAT_BUMP(arcstat_l2_rebuild_log_blks);
 	spa_iostats_l2_rebuild_log_blks(spa);
 }
@@ -10708,9 +10677,6 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio, l2arc_write_callback_t *cb)
 	ARCSTAT_INCR(arcstat_l2_write_bytes, asize);
 	ARCSTAT_BUMP(arcstat_l2_log_blk_writes);
 	spa_iostats_l2_log_blk_writes(spa);
-	ARCSTAT_F_AVG(arcstat_l2_log_blk_avg_asize, asize);
-	ARCSTAT_F_AVG(arcstat_l2_data_to_meta_ratio,
-	    dev->l2ad_log_blk_payload_asize / asize);
 
 	/* start a new log block */
 	dev->l2ad_log_ent_idx = 0;

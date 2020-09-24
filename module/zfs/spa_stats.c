@@ -922,10 +922,8 @@ static spa_iostats_t spa_iostats_template = {
 	{ "l2_size",				KSTAT_DATA_UINT64 },
 	{ "l2_asize",				KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_writes",			KSTAT_DATA_UINT64 },
-	{ "l2_log_blk_avg_asize",		KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_asize",			KSTAT_DATA_UINT64 },
 	{ "l2_log_blk_count",			KSTAT_DATA_UINT64 },
-	{ "l2_data_to_meta_ratio",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_success",			KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_unsupported",		KSTAT_DATA_UINT64 },
 	{ "l2_rebuild_io_errors",		KSTAT_DATA_UINT64 },
@@ -951,9 +949,7 @@ spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
     uint64_t evict_lock_retry, uint64_t evict_reading, uint64_t evict_l1cached,
     uint64_t free_on_write, uint64_t abort_lowmem, uint64_t cksum_bad,
     uint64_t io_error, uint64_t l2_size, uint64_t l2_asize,
-    uint64_t log_blk_writes, uint64_t log_blk_avg_asize,
-    uint64_t log_blk_asize, uint64_t log_blk_count,
-    uint64_t data_to_meta_ratio)
+    uint64_t log_blk_writes, uint64_t log_blk_asize, uint64_t log_blk_count)
 {
 	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
@@ -989,10 +985,8 @@ spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
 	SPA_IOSTATS_ADD(l2_size, l2_size);
 	SPA_IOSTATS_ADD(l2_asize, l2_asize);
 	SPA_IOSTATS_ADD(l2_log_blk_writes, log_blk_writes);
-	SPA_IOSTATS_ADD(l2_log_blk_avg_asize, log_blk_avg_asize);
 	SPA_IOSTATS_ADD(l2_log_blk_asize, log_blk_asize);
 	SPA_IOSTATS_ADD(l2_log_blk_count, log_blk_count);
-	SPA_IOSTATS_ADD(l2_data_to_meta_ratio, data_to_meta_ratio);
 }
 
 void
