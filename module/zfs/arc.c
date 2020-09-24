@@ -916,125 +916,148 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	spa_iostats_l2(			\
 	spa, 1, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_misses(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_prefetch(spa, asize)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, asize, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_mfu(spa, asize)		\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, asize, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_mru(spa, asize)		\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, asize, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_bufc_data_asize(spa, asize) \
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, asize, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_bufc_metadata_asize(spa, asize) \
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, asize, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
-	0, 0, 0, 0, 0)
-
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_feeds(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_rw_clash(spa)	\
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_read_bytes(spa, bytes)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	bytes, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_write_bytes(spa, bytes)	\
 	spa_iostats_l2(				\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
 	0, bytes, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_sent(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 1, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_done(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 1, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_error(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 1, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_writes_lock_retry(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 1, 0, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_lock_retry(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 1, 0, 0, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_reading(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 1, 0, 0,	\
-	0, 0, 0, 0, 0)
-
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_evict_l1cached(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 1, 0,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_free_on_write(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 1,	\
-	0, 0, 0, 0, 0)
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_abort_lowmem(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	1, 0, 0, 0, 0)
+	1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_cksum_bad(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 1, 0, 0, 0)
+	0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_io_error(spa) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 1, 0, 0)
+	0, 0, 1, 0, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_size(spa, asize) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, asize, 0)
+	0, 0, 0, asize, 0, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_asize(spa, asize) \
 	spa_iostats_l2(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-	0, 0, 0, 0, asize)
+	0, 0, 0, 0, asize, 0, 0, 0, 0, 0)
 
+#define spa_iostats_l2_log_blk_writes(spa)	\
+	spa_iostats_l2_rebuild(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 1, 0, 0, 0, 0)
+#define spa_iostats_l2_log_blk_avg_asize(spa, asize)	\
+	spa_iostats_l2_rebuild(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, asize, 0, 0, 0)
+#define spa_iostats_l2_log_blk_asize(spa, asize)	\
+	spa_iostats_l2_rebuild(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, asize, 0, 0)
+#define spa_iostats_l2_log_blk_count(spa)	\
+	spa_iostats_l2_rebuild(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 1, 0)
+#define spa_iostats_l2_data_to_meta_ratio(spa, ratio)	\
+	spa_iostats_l2_rebuild(			\
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,		\
+	0, 0, 0, 0, 0, 0, 0, 0, 0, ratio)
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
  * 		metadata and data are cached from ARC into L2ARC.

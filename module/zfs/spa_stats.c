@@ -921,6 +921,22 @@ static spa_iostats_t spa_iostats_template = {
 	{ "l2_io_error",			KSTAT_DATA_UINT64 },
 	{ "l2_size",				KSTAT_DATA_UINT64 },
 	{ "l2_asize",				KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_writes",			KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_avg_asize",		KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_log_blk_count",			KSTAT_DATA_UINT64 },
+	{ "l2_data_to_meta_ratio",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_success",			KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_unsupported",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_io_errors",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_dh_errors",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_cksum_lb_errors",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_lowmem",			KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_size",			KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_asize",			KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_bufs",			KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_bufs_precached",		KSTAT_DATA_UINT64 },
+	{ "l2_rebuild_log_blks",		KSTAT_DATA_UINT64 },
 };
 
 #define	SPA_IOSTATS_ADD(stat, val) \
@@ -934,7 +950,10 @@ spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
     uint64_t writes_error, uint64_t writes_lock_retry,
     uint64_t evict_lock_retry, uint64_t evict_reading, uint64_t evict_l1cached,
     uint64_t free_on_write, uint64_t abort_lowmem, uint64_t cksum_bad,
-    uint64_t io_error, uint64_t l2_size, uint64_t l2_asize)
+    uint64_t io_error, uint64_t l2_size, uint64_t l2_asize,
+    uint64_t log_blk_writes, uint64_t log_blk_avg_asize,
+    uint64_t log_blk_asize, uint64_t log_blk_count,
+    uint64_t data_to_meta_ratio)
 {
 	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
@@ -969,6 +988,41 @@ spa_iostats_l2(spa_t *spa, uint64_t hits, uint64_t misses,
 	SPA_IOSTATS_ADD(l2_io_error, io_error);
 	SPA_IOSTATS_ADD(l2_size, l2_size);
 	SPA_IOSTATS_ADD(l2_asize, l2_asize);
+	SPA_IOSTATS_ADD(l2_log_blk_writes, log_blk_writes);
+	SPA_IOSTATS_ADD(l2_log_blk_avg_asize, log_blk_avg_asize);
+	SPA_IOSTATS_ADD(l2_log_blk_asize, log_blk_asize);
+	SPA_IOSTATS_ADD(l2_log_blk_count, log_blk_count);
+	SPA_IOSTATS_ADD(l2_data_to_meta_ratio, data_to_meta_ratio);
+}
+
+void
+spa_iostats_l2_rebuild(spa_t *spa, uint64_t rebuild_success,
+    uint64_t rebuild_unsupported, uint64_t rebuild_io_errors,
+    uint64_t rebuild_dh_errors, uint64_t cksum_lb_errors,
+    uint64_t rebuild_lowmem, uint64_t rebuild_size, uint64_t rebuild_asize,
+    uint64_t rebuild_bufs, uint64_t rebuild_bufs_precached,
+    uint64_t rebuild_log_blks)
+{
+	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	kstat_t *ksp = shk->kstat;
+	spa_iostats_t *iostats;
+
+	if (ksp == NULL)
+		return;
+
+	iostats = ksp->ks_data;
+
+	SPA_IOSTATS_ADD(l2_rebuild_success, rebuild_success);
+	SPA_IOSTATS_ADD(l2_rebuild_unsupported, rebuild_unsupported);
+	SPA_IOSTATS_ADD(l2_rebuild_io_errors, rebuild_io_errors);
+	SPA_IOSTATS_ADD(l2_rebuild_dh_errors, rebuild_dh_errors);
+	SPA_IOSTATS_ADD(l2_rebuild_cksum_lb_errors, cksum_lb_errors);
+	SPA_IOSTATS_ADD(l2_rebuild_lowmem, rebuild_lowmem);
+	SPA_IOSTATS_ADD(l2_rebuild_size, rebuild_size);
+	SPA_IOSTATS_ADD(l2_rebuild_asize, rebuild_asize);
+	SPA_IOSTATS_ADD(l2_rebuild_bufs, rebuild_bufs);
+	SPA_IOSTATS_ADD(l2_rebuild_bufs_precached, rebuild_bufs_precached);
+	SPA_IOSTATS_ADD(l2_rebuild_log_blks, rebuild_log_blks);
 }
 
 void
