@@ -1056,7 +1056,7 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	spa, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0)
 #define	spa_iostats_l2_rebuild_size(spa, size)	\
 	spa_iostats_l2_rebuild(			\
-	spa, 0, 0, 1, 0, 0, 0, size, 0, 0, 0, 0)
+	spa, 0, 0, 0, 0, 0, 0, size, 0, 0, 0, 0)
 #define	spa_iostats_l2_rebuild_asize(spa, asize)	\
 	spa_iostats_l2_rebuild(			\
 	spa, 0, 0, 0, 0, 0, 0, 0, asize, 0, 0, 0)
@@ -1068,7 +1068,7 @@ static void l2arc_hdr_arcstats_update(arc_buf_hdr_t *hdr, boolean_t incr,
 	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0)
 #define	spa_iostats_l2_rebuild_log_blks(spa)	\
 	spa_iostats_l2_rebuild(			\
-	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	spa, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
 
 /*
  * l2arc_mfuonly : A ZFS module parameter that controls whether only MFU
