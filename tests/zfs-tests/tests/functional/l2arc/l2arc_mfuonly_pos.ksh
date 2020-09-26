@@ -75,7 +75,13 @@ log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
 log_must zpool import -d $VDIR $TESTPOOL
-log_must test $(get_arcstat l2_mru_asize) -eq 0
+
+# Regardless of l2arc_noprefetch, some MFU buffers might be evicted
+# from ARC, accessed later on as prefetches and transition to MRU as prefetches.
+# If accessed again they are counted as MRU and the l2arc_mru_asize arcstat
+# will not be 0. That is the reason with we set the following test to less
+# than 1kB and not exactly 0.
+log_must test $(get_arcstat l2_mru_asize) -le 1024
 
 log_must zpool destroy -f $TESTPOOL
 

@@ -4174,6 +4174,24 @@ function get_arcstat # stat
 }
 
 #
+# Wait for the specified arcstat to reach a non-zero plateau.
+#
+function arcstat_plateau # stat
+{
+	typeset stat=$1
+	typeset do_once=true
+
+	while $do_once || [ $stat1 -ne $stat2 ] || [ $stat2 -eq 0 ]; do
+		typeset stat1=$(get_arcstat $stat)
+		sleep 2
+		typeset stat2=$(get_arcstat $stat)
+		do_once=false
+	done
+
+	echo $stat2
+}
+
+#
 # Given an array of pids, wait until all processes
 # have completed and check their return status.
 #
