@@ -77,7 +77,7 @@ log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
 log_must zpool export $TESTPOOL
-arcstat_plateau l2_feeds
+arcstat_quiescence_noecho l2_feeds
 
 typeset log_blk_end=$(get_arcstat l2_log_blk_writes)
 typeset log_blk_rebuild_start=$(get_arcstat l2_rebuild_log_blks)
@@ -89,7 +89,7 @@ typeset l2_hits_start=$(get_arcstat l2_hits)
 
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
-typeset log_blk_rebuild_end=$(arcstat_plateau l2_rebuild_log_blks)
+typeset log_blk_rebuild_end=$(arcstat_quiescence_echo l2_rebuild_log_blks)
 typeset l2_hits_end=$(get_arcstat l2_hits)
 
 log_must test $(( $log_blk_rebuild_end - $log_blk_rebuild_start )) -eq \
@@ -98,7 +98,7 @@ log_must test $(( $log_blk_rebuild_end - $log_blk_rebuild_start )) -eq \
 log_must test $l2_hits_end -gt $l2_hits_start
 
 log_must zpool offline $TESTPOOL $VDEV_CACHE
-arcstat_plateau l2_size
+arcstat_quiescence_noecho l2_size
 
 log_must zdb -lq $VDEV_CACHE
 

@@ -92,7 +92,7 @@ typeset l2_rebuild_log_blk_start=$(get_arcstat l2_rebuild_log_blks)
 
 log_must zpool import -d $VDIR $TESTPOOL
 
-typeset l2_rebuild_log_blk_end=$(arcstat_plateau l2_rebuild_log_blks)
+typeset l2_rebuild_log_blk_end=$(arcstat_quiescence_echo l2_rebuild_log_blks)
 
 log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end -
 	$l2_rebuild_log_blk_start ))
@@ -100,7 +100,7 @@ log_must test $l2_dh_log_blk -gt 0
 
 log_must zpool offline $TESTPOOL $VDEV_CACHE
 
-arcstat_plateau l2_size
+arcstat_quiescence_noecho l2_size
 
 log_must zdb -lllq $VDEV_CACHE
 
