@@ -79,7 +79,8 @@ log_must zpool import -d $VDIR $TESTPOOL
 # Regardless of l2arc_noprefetch, some MFU buffers might be evicted
 # from ARC, accessed later on as prefetches and transition to MRU as prefetches.
 # If accessed again they are counted as MRU and the l2arc_mru_asize arcstat
-# will not be 0. That is the reason with we set the following test to less
+# will not be 0 (mentioned also in zfs-module-parameters.5)
+# That is the reason we set the following test to an arbitrary value of less
 # than 1kB and not exactly 0.
 log_must test $(get_arcstat l2_mru_asize) -le 1024
 
