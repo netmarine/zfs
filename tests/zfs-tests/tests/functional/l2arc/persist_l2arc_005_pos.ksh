@@ -76,6 +76,7 @@ log_must eval "echo $PASSPHRASE | zfs create -o encryption=on" \
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
+arcstat_quiescence_noecho l2_size
 log_must zpool export $TESTPOOL
 arcstat_quiescence_noecho l2_feeds
 
@@ -88,6 +89,7 @@ log_must eval "echo $PASSPHRASE | zfs mount -l $TESTPOOL/$TESTFS1"
 typeset l2_hits_start=$(get_arcstat l2_hits)
 
 log_must fio $FIO_SCRIPTS/random_reads.fio
+arcstat_quiescence_noecho l2_size
 
 typeset log_blk_rebuild_end=$(arcstat_quiescence_echo l2_rebuild_log_blks)
 typeset l2_hits_end=$(get_arcstat l2_hits)

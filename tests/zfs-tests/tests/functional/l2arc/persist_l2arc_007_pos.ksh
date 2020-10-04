@@ -70,6 +70,7 @@ log_must zpool create -f $TESTPOOL $VDEV cache $VDEV_CACHE
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
+arcstat_quiescence_noecho l2_size
 log_must zpool offline $TESTPOOL $VDEV_CACHE
 arcstat_quiescence_noecho l2_size
 
@@ -78,6 +79,7 @@ typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
 
 log_must zpool online $TESTPOOL $VDEV_CACHE
+arcstat_quiescence_noecho l2_size
 
 typeset l2_rebuild_log_blk_end=$(arcstat_quiescence_echo l2_rebuild_log_blks)
 

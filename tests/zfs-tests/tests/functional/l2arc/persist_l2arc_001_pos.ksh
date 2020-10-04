@@ -83,7 +83,9 @@ log_must zpool import -d $VDIR $TESTPOOL
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
+arcstat_quiescence_noecho l2_size
 log_must zpool export $TESTPOOL
+arcstat_quiescence_noecho l2_size
 
 typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 	awk '{print $2}')
@@ -91,6 +93,7 @@ typeset l2_dh_log_blk=$(zdb -l $VDEV_CACHE | grep log_blk_count | \
 typeset l2_rebuild_log_blk_start=$(get_arcstat l2_rebuild_log_blks)
 
 log_must zpool import -d $VDIR $TESTPOOL
+arcstat_quiescence_noecho l2_size
 
 typeset l2_rebuild_log_blk_end=$(arcstat_quiescence_echo l2_rebuild_log_blks)
 
@@ -99,7 +102,6 @@ log_must test $l2_dh_log_blk -eq $(( $l2_rebuild_log_blk_end -
 log_must test $l2_dh_log_blk -gt 0
 
 log_must zpool offline $TESTPOOL $VDEV_CACHE
-
 arcstat_quiescence_noecho l2_size
 
 log_must zdb -lllq $VDEV_CACHE
