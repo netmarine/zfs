@@ -937,6 +937,7 @@ boolean_t l2arc_log_blkptr_valid(l2arc_dev_t *dev,
 /* used in vdev_trim.c */
 void l2arc_dev_hdr_update(l2arc_dev_t *dev);
 l2arc_dev_t *l2arc_vdev_get(vdev_t *vd);
+void l2arc_evict(l2arc_dev_t *dev, uint64_t size, boolean_t all);
 
 #ifdef __cplusplus
 }

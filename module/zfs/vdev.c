@@ -49,6 +49,7 @@
 #include <sys/zap.h>
 #include <sys/fs/zfs.h>
 #include <sys/arc.h>
+#include <sys/arc_impl.h>
 #include <sys/zil.h>
 #include <sys/dsl_scan.h>
 #include <sys/abd.h>
@@ -3744,6 +3745,13 @@ top:
 		    vdev_dtl_required(vd))
 			return (spa_vdev_state_exit(spa, NULL,
 			    SET_ERROR(EBUSY)));
+
+		if (vdev_readable(vd) && vdev_writeable(vd) &&
+		    vd->vdev_aux == &spa->spa_l2cache) {
+			if (l2arc_vdev_present(vd)) {
+				l2arc_evict(l2arc_vdev_get(vd), 0, B_TRUE);
+			}
+		}
 
 		/*
 		 * If the top-level is a slog and it has had allocations

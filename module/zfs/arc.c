@@ -8672,7 +8672,7 @@ l2arc_log_blk_overhead(uint64_t write_sz, l2arc_dev_t *dev)
  * This is clearing a region on the L2ARC device ready for writing.
  * If the 'all' boolean is set, every buffer is evicted.
  */
-static void
+void
 l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 {
 	list_t *buflist;
@@ -9558,7 +9558,6 @@ l2arc_rebuild_vdev(vdev_t *vd, boolean_t reopen)
 			if (!l2arc_rebuild_enabled) {
 				return;
 			} else {
-				l2arc_evict(dev, 0, B_TRUE);
 				/* start a new log block */
 				dev->l2ad_log_ent_idx = 0;
 				dev->l2ad_log_blk_payload_asize = 0;
