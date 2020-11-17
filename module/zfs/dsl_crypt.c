@@ -2007,14 +2007,6 @@ dsl_crypto_recv_raw_objset_check(dsl_dataset_t *ds, dsl_dataset_t *fromds,
 	if (ret != 0)
 		return (ret);
 
-	/*
-	 * Useraccounting is not portable and must be done with the keys loaded.
-	 * Therefore, whenever we do any kind of receive the useraccounting
-	 * must not be present.
-	 */
-	ASSERT0(os->os_flags & OBJSET_FLAG_USERACCOUNTING_COMPLETE);
-	ASSERT0(os->os_flags & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE);
-
 	mdn = DMU_META_DNODE(os);
 
 	/*
