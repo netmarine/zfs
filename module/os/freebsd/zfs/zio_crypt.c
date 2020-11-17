@@ -1072,7 +1072,8 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 
 	/*
 	 * This is necessary here as we check next whether
-	 * OBJSET_FLAG_USERACCOUNTING_COMPLETE is set in order to
+	 * OBJSET_FLAG_USERACCOUNTING_COMPLETE or
+	 * OBJSET_FLAG_USEROBJACCOUNTING are set in order to
 	 * decide if the local_mac should be zeroed out.
 	 */
 	intval = osp->os_flags;
