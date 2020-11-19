@@ -1081,7 +1081,10 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 	    (datalen >= OBJSET_PHYS_SIZE_V2 &&
 	    osp->os_userused_dnode.dn_type == DMU_OT_NONE &&
 	    osp->os_groupused_dnode.dn_type == DMU_OT_NONE) ||
-	    (datalen <= OBJSET_PHYS_SIZE_V1)) {
+	    (datalen <= OBJSET_PHYS_SIZE_V1) ||
+	    (intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) == 0 ||
+	    (intval & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE) == 0 ||
+	    (intval & OBJSET_FLAG_PROJECTQUOTA_COMPLETE) == 0) {
 		bzero(local_mac, ZIO_OBJSET_MAC_LEN);
 		return (0);
 	}
