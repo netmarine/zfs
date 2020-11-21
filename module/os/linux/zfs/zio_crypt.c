@@ -1198,15 +1198,12 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 	bcopy(raw_portable_mac, portable_mac, ZIO_OBJSET_MAC_LEN);
 
 	/*
-	 * Add in the non-portable os_flags. This is necessary here as we check
-	 * whether OBJSET_FLAG_USERACCOUNTING_COMPLETE is set in order to
+	 * This is necessary here as we check next whether
+	 * OBJSET_FLAG_USERACCOUNTING_COMPLETE is set in order to
 	 * decide if the local_mac should be zeroed out.
 	 */
 	intval = osp->os_flags;
 	if (should_bswap)
-		intval = BSWAP_64(intval);
-	intval &= ~OBJSET_CRYPT_PORTABLE_FLAGS_MASK;
-	if (!ZFS_HOST_BYTEORDER)
 		intval = BSWAP_64(intval);
 
 	/*
@@ -1222,7 +1219,8 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 	    osp->os_groupused_dnode.dn_type == DMU_OT_NONE) ||
 	    (datalen <= OBJSET_PHYS_SIZE_V1) ||
 	    (intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) == 0 ||
-	    (intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) == 0) {
+	    (intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) == 0 ||
+	    (intval & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE) == 0) {
 		bzero(local_mac, ZIO_OBJSET_MAC_LEN);
 		return (0);
 	}
@@ -1233,6 +1231,14 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 		ret = SET_ERROR(EIO);
 		goto error;
 	}
+
+	/* add in the non-portable os_flags */
+	intval = osp->os_flags;
+	if (should_bswap)
+		intval = BSWAP_64(intval);
+	intval &= ~OBJSET_CRYPT_PORTABLE_FLAGS_MASK;
+	if (!ZFS_HOST_BYTEORDER)
+		intval = BSWAP_64(intval);
 
 	cd.cd_length = sizeof (uint64_t);
 	cd.cd_raw.iov_base = (char *)&intval;
