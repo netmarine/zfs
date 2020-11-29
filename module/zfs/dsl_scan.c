@@ -3535,6 +3535,10 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 		zfs_dbgmsg("restarting scan func=%u txg=%llu",
 		    func, (longlong_t)tx->tx_txg);
 		dsl_scan_setup_sync(&func, tx);
+	} else if (dsl_scan_scrubbing(dp) &&
+	    vdev_resilver_needed(spa->spa_root_vdev, NULL, NULL)) {
+		/* cancel active scrub */
+		dsl_scan_cancel_sync(NULL, tx);
 	}
 
 	/*
