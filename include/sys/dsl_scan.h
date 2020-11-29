@@ -154,6 +154,7 @@ typedef struct dsl_scan {
 	/* members needed for syncing scan status to disk */
 	dsl_scan_phys_t scn_phys;	/* on disk representation of scan */
 	dsl_scan_phys_t scn_phys_cached;
+	kmutex_t scn_queue_lock;
 	avl_tree_t scn_queue;		/* queue of datasets to scan */
 	uint64_t scn_bytes_pending;	/* outstanding data to issue */
 } dsl_scan_t;
