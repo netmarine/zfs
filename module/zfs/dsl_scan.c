@@ -760,6 +760,7 @@ dsl_scan_setup_sync(void *arg, dmu_tx_t *tx)
 			spa_event_notify(spa, NULL, aux,
 			    ESC_ZFS_RESILVER_START);
 			nvlist_free(aux);
+			scn->scn_phys.scn_func = POOL_SCAN_RESILVER;
 		} else {
 			spa_event_notify(spa, NULL, NULL, ESC_ZFS_SCRUB_START);
 		}
@@ -812,7 +813,8 @@ dsl_scan_setup_sync(void *arg, dmu_tx_t *tx)
 
 	spa_history_log_internal(spa, "scan setup", tx,
 	    "func=%u mintxg=%llu maxtxg=%llu",
-	    *funcp, (u_longlong_t)scn->scn_phys.scn_min_txg,
+	    (int) scn->scn_phys.scn_func,
+	    (u_longlong_t)scn->scn_phys.scn_min_txg,
 	    (u_longlong_t)scn->scn_phys.scn_max_txg);
 }
 
