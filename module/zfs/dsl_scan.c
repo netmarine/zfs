@@ -706,8 +706,14 @@ dsl_scan_setup_check(void *arg, dmu_tx_t *tx)
 {
 	dsl_scan_t *scn = dmu_tx_pool(tx)->dp_scan;
 	vdev_t *rvd = scn->scn_dp->dp_spa->spa_root_vdev;
+	pool_scan_func_t *funcp = arg;
 
 	if (dsl_scan_is_running(scn) || vdev_rebuild_active(rvd))
+		return (SET_ERROR(EBUSY));
+
+	if (dmu_tx_is_syncing(tx) && scn->scn_restart_txg != 0 &&
+	    scn->scn_restart_txg > tx->tx_txg &&
+	    *funcp == POOL_SCAN_RESILVER)
 		return (SET_ERROR(EBUSY));
 
 	return (0);
