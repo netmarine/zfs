@@ -2674,6 +2674,7 @@ spa_do_crypt_objset_mac_abd(boolean_t generate, spa_t *spa, uint64_t dsobj,
 	objset_phys_t *osp = buf;
 	uint8_t portable_mac[ZIO_OBJSET_MAC_LEN];
 	uint8_t local_mac[ZIO_OBJSET_MAC_LEN];
+	uint64_t intval;
 
 	/* look up the key from the spa's keystore */
 	ret = spa_keystore_lookup_key(spa, dsobj, FTAG, &dck);
@@ -2696,8 +2697,15 @@ spa_do_crypt_objset_mac_abd(boolean_t generate, spa_t *spa, uint64_t dsobj,
 		return (0);
 	}
 
+	intval = osp->os_flags;
+	if (byteswap)
+		intval = BSWAP_64(intval);
+
+	/* Do not compare the local_mac if user accounting is not complete */
 	if (bcmp(portable_mac, osp->os_portable_mac, ZIO_OBJSET_MAC_LEN) != 0 ||
-	    bcmp(local_mac, osp->os_local_mac, ZIO_OBJSET_MAC_LEN) != 0) {
+	    ((intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) != 0 &&
+	    (intval & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE) != 0 &&
+	    bcmp(local_mac, osp->os_local_mac, ZIO_OBJSET_MAC_LEN) != 0)) {
 		abd_return_buf(abd, buf, datalen);
 		return (SET_ERROR(ECKSUM));
 	}
