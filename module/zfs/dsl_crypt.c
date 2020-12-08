@@ -2674,7 +2674,7 @@ spa_do_crypt_objset_mac_abd(boolean_t generate, spa_t *spa, uint64_t dsobj,
 	objset_phys_t *osp = buf;
 	uint8_t portable_mac[ZIO_OBJSET_MAC_LEN];
 	uint8_t local_mac[ZIO_OBJSET_MAC_LEN];
-	uint64_t intval;
+	uint64_t intflags, inttype;
 
 	/* look up the key from the spa's keystore */
 	ret = spa_keystore_lookup_key(spa, dsobj, FTAG, &dck);
@@ -2697,15 +2697,30 @@ spa_do_crypt_objset_mac_abd(boolean_t generate, spa_t *spa, uint64_t dsobj,
 		return (0);
 	}
 
-	intval = osp->os_flags;
-	if (byteswap)
-		intval = BSWAP_64(intval);
+	intflags = osp->os_flags;
+	inttype = osp->os_type;
+	if (byteswap) {
+		intflags = BSWAP_64(intflags);
+		inttype = BSWAP_64(inttype);
+	}
 
-	/* Do not compare the local_mac if user accounting is not complete */
-	if (bcmp(portable_mac, osp->os_portable_mac, ZIO_OBJSET_MAC_LEN) != 0 ||
-	    ((intval & OBJSET_FLAG_USERACCOUNTING_COMPLETE) != 0 &&
-	    (intval & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE) != 0 &&
-	    bcmp(local_mac, osp->os_local_mac, ZIO_OBJSET_MAC_LEN) != 0)) {
+	/*
+	 * Do not compare the local_mac if user accounting is not enabled or
+	 * complete.
+	 */
+	if ((spa_feature_is_enabled(spa, SPA_FEATURE_USEROBJ_ACCOUNTING) &&
+	    spa_version(spa) >= SPA_VERSION_USERSPACE &&
+	    osp->os_userused_dnode.dn_type != DMU_OT_NONE && inttype != 0 &&
+	    (intflags & OBJSET_FLAG_USEROBJACCOUNTING_COMPLETE) != 0 &&
+	    (intflags & OBJSET_FLAG_USERACCOUNTING_COMPLETE) != 0)) {
+		if (bcmp(local_mac, osp->os_local_mac,
+		    ZIO_OBJSET_MAC_LEN) != 0) {
+			abd_return_buf(abd, buf, datalen);
+			return (SET_ERROR(ECKSUM));
+		}
+	}
+
+	if (bcmp(portable_mac, osp->os_portable_mac, ZIO_OBJSET_MAC_LEN) != 0) {
 		abd_return_buf(abd, buf, datalen);
 		return (SET_ERROR(ECKSUM));
 	}
